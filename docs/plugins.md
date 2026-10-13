@@ -200,7 +200,10 @@ crates/plugins/example/build.sh      # cargo build --release --target wasm32-unk
 ```
 
 The script also refreshes `crates/plugins/tests/fixtures/desaturate.wasm`, the test fixture built from that source.
-The crate is not a workspace member. Any language that targets core WebAssembly works (C, Zig, AssemblyScript,
+[`crates/plugins/intersect`](../crates/plugins/intersect) is a second, bigger sample, **Intersection Anchors**:
+it inserts anchor points where the selected paths cross (or marks the crossings, or snaps Bézier handles to angle
+steps), with its own geometry code and native unit tests.
+The crates are not workspace members. Any language that targets core WebAssembly works (C, Zig, AssemblyScript,
 WAT…), as long as the module has no imports: in Rust, `std` on `wasm32-unknown-unknown` is fine as long as it never
 touches WASI. `vectorcraft_plugins::wat::module` is the skeleton of a plug-in in WebAssembly text, which the tests
 build their plug-ins from.
