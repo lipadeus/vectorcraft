@@ -252,6 +252,10 @@ pub struct ToolContext<'a> {
     pub snap_to_point: bool,
     /// View → Show Corner Widget: paths show draggable Live Corners widgets in their corners.
     pub corner_widgets: bool,
+    /// Plug-ins panel → Snap to Anchors: dragged anchors and direction handles snap to the other
+    /// anchor points and Bézier handle ends (and the ruler guides), even with Smart Guides and
+    /// Snap to Point off.
+    pub snap_to_anchors: bool,
     /// Which paint proxy is in front (true = Fill): the one the Gradient tool edits.
     pub fill_active: bool,
     /// The selected gradient stop (`gradient.selectStop`), marked on the gradient annotator.
@@ -895,6 +899,7 @@ pub(crate) mod testutil {
             snap_to_pixel: false,
             snap_to_point: true,
             corner_widgets: true,
+            snap_to_anchors: false,
             fill_active: true,
             gradient_stop: None,
             appearance_item: None,

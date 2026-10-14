@@ -34,7 +34,8 @@ In the app, installed filters appear under **Object › Plug-ins**, next to **In
 Plug-ins**; live effects under **Effect › Plug-ins** and in the Appearance panel's effect menu. A plug-in with
 parameters gets a dialog generated from its schema (numbers, whole numbers, checkboxes, dropdowns) with a live
 preview; without parameters it runs at once. **File › Open** of a `.wasm` file installs it too (on the web this is
-how plug-ins get in).
+how plug-ins get in). **Window › Plug-ins** opens the Plug-ins panel, which lists each installed filter with the
+same generated parameter form and an Apply button, alongside Install/Reload.
 
 **Preference folder.** Edit › Preferences › Performance & Storage › *Additional Plug-ins Folder*: when set, every
 `*.wasm` in that folder (not recursive) is installed at startup and whenever the preference changes (desktop builds;

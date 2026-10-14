@@ -654,7 +654,8 @@ impl VectorcraftApp {
             // nor the Live Corners widgets, and the tools do not answer the pointer on them.
             show_bbox: self.ui.view.bounding_box && self.ui.view.edges,
             snap_to_point: self.ui.view.snap_to_point,
-            corner_widgets: self.ui.view.corner_widgets && self.ui.view.edges,
+            corner_widgets: self.ui.view.corner_widgets,
+            snap_to_anchors: self.ui.view.snap_to_anchors,
             screen: self.screen_frame(),
             artboard: self.view().map_or(0, |v| v.artboard),
         }

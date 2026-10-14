@@ -34,10 +34,18 @@ tab is documented in its own section below.**
 
 ## Using it
 
-Select what you care about and run **Object › Plug-ins › Intersection Anchors**. The dialog shows
+Select what you care about and run **Object › Plug-ins › Intersection Anchors** — or open
+**Window › Plug-ins**, where the plug-in sits as its own panel section with the same tabbed
+parameters and an **Apply** button. The dialog shows
 the parameters with a **live preview**, so you see the result on the canvas *before* you click
 OK — that preview is how "show what will be affected before the change" works within the plug-in
 API. Everything runs as one undo step.
+
+The Plug-ins panel also hosts **Snap to Anchors** (a host feature, not part of the `.wasm`):
+with the checkbox on, dragging a Bézier anchor point or direction handle with the Direct
+Selection tool snaps it live to the other anchor points, to other Bézier handle ends and to ruler
+guides — even with Smart Guides and Snap to Point off. View → Snap to Grid / Snap to Pixel take
+over while they are on, exactly as for ordinary drags.
 
 ### Your selection matters
 
@@ -142,8 +150,9 @@ anchor (shared endpoints, segments meeting at a point) is skipped.
 
 - **No tool plug-ins in ABI v1**: a plug-in cannot receive pointer events, draw canvas overlays or
   alter drag behaviour. Hover-highlighting a crossing before clicking is therefore approximated by
-  the dialog's live preview (`mark` mode), and interactive snapping is left to the app's built-in
-  Shift constraint.
+  the dialog's live preview (`mark` mode). Live snapping while dragging is a **host** feature
+  instead: turn on **Snap to Anchors** in the Plug-ins panel (Window → Plug-ins) and a dragged
+  anchor or Bézier handle snaps to the other anchor points and handle ends as you drag.
 - Collinear overlapping segments (lines lying on top of each other) have no single crossing point
   and are ignored.
 - Tangential touches may be reported as a crossing when the curves actually meet within the

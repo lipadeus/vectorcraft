@@ -596,7 +596,7 @@ impl Tool for DirectSelectionTool {
                     }
                     out.push(Action::Begin("Move".into()));
                     self.state = State::MoveAnchors { start, grab, began: true };
-                    self.anchor_snap = Some(PointSnap::new(cx, || Targets::for_anchor_drag(cx.doc, cx.selection)));
+                    self.anchor_snap = Some(PointSnap::for_reshape(cx, || Targets::for_anchor_drag(cx.doc, cx.selection)));
                 }
                 let mut d = move_delta(start, p, ev.mods.shift);
                 let unsnapped = d;
@@ -638,8 +638,8 @@ impl Tool for DirectSelectionTool {
                     self.state = State::MoveObject { start, grab, began: true };
                     if grab.is_some() {
                         // Alt can go down or up at any time: gather both while nothing has moved.
-                        self.anchor_snap = Some(PointSnap::new(cx, || Targets::for_anchor_drag(cx.doc, cx.selection)));
-                        self.copy_snap = Some(PointSnap::new(cx, || Targets::for_anchor_drag(cx.doc, &Selection::default())));
+                        self.anchor_snap = Some(PointSnap::for_reshape(cx, || Targets::for_anchor_drag(cx.doc, cx.selection)));
+                        self.copy_snap = Some(PointSnap::for_reshape(cx, || Targets::for_anchor_drag(cx.doc, &Selection::default())));
                     } else {
                         self.move_snap = Some(MoveSnap::new(cx));
                     }

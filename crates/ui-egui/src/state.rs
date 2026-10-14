@@ -158,6 +158,7 @@ pub const ICON_PANELS: &[(&str, &str, &str)] = &[
     (crate::panels::asset_export::ID, "Asset Export", "share-2"),
     (crate::panels::css_properties::ID, "CSS Properties", "globe"),
     (crate::panels::variables::ID, "Variables", "chart-column"),
+    (crate::panels::plugins::ID, "Plug-ins", "dc-anchor"),
 ];
 
 /// Groups of icon panels separated by dividers in the collapsed column.
@@ -175,6 +176,7 @@ pub const ICON_PANEL_GROUPS: &[&[&str]] = &[
     &["character", "paragraph", "glyphs"],
     &["history", "actions", "info", "navigator"],
     &["variables"],
+    &["plugins"],
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -196,6 +198,10 @@ pub struct ViewFlags {
     pub corner_widgets: bool,
     /// View → Snap to Pixel.
     pub snap_to_pixel: bool,
+    /// Plug-ins panel → Snap to Anchors: dragged anchors and direction handles snap to anchor
+    /// points and Bézier handle ends.
+    #[serde(default)]
+    pub snap_to_anchors: bool,
     /// View → Show/Hide Text Threads.
     pub text_threads: bool,
     /// View → Show/Hide Gradient Annotator.
@@ -224,6 +230,7 @@ impl Default for ViewFlags {
             trim_view: false,
             corner_widgets: true,
             snap_to_pixel: false,
+            snap_to_anchors: false,
             text_threads: true,
             gradient_annotator: true,
             hidden_chars: false,

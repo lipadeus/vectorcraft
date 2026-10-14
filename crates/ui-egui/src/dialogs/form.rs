@@ -241,7 +241,7 @@ pub(super) fn grid(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit) {
 }
 
 /// Command/effect parameters from the dialog fields (drop UI-only keys).
-pub(super) fn params(d: &Dialog) -> Value {
+pub(crate) fn params(d: &Dialog) -> Value {
     Value::Object(d.fields.iter().filter(|(k, _)| !k.starts_with("__") && k.as_str() != "preview").map(|(k, v)| (k.clone(), v.clone())).collect())
 }
 
@@ -358,7 +358,7 @@ fn typed_number(x: f64) -> Value {
 /// true when a value changed. The labels (from the parameter keys) and choices are the plug-in's
 /// text, shown as they are. A manifest with `tabs` gets its tab parameter as a real tab row, the
 /// active tab's description under it, and only the active tab's parameters below that.
-pub(super) fn schema_fields(
+pub(crate) fn schema_fields(
     ui: &mut egui::Ui,
     d: &mut Dialog,
     specs: &[(String, vectorcraft_plugins::ParamSpec)],

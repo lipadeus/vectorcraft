@@ -2916,6 +2916,7 @@ pub fn menu_tree_named(english_names: bool) -> Vec<(&'static str, Vec<Item>)> {
                 panel("Navigator", "navigator"),
                 panel("Pathfinder", "pathfinder"),
                 panel("Pattern Options", "patternOptions"),
+                panel("Plug-ins", crate::panels::plugins::ID),
                 panel("Properties", "properties"),
                 panel("Separations Preview", "separations"),
                 panel("Stroke", "stroke"),

@@ -23,6 +23,9 @@ pub struct ViewInfo {
     pub snap_to_point: bool,
     /// View → Show Corner Widget.
     pub corner_widgets: bool,
+    /// Plug-ins panel → Snap to Anchors: dragged anchors and direction handles snap to anchor
+    /// points and Bézier handle ends.
+    pub snap_to_anchors: bool,
     /// The document window (none headless): screen-fixed widgets sit in it.
     pub screen: Option<vectorcraft_tools::ScreenFrame>,
     /// The view's active artboard (an index): artboard rulers measure from it.
@@ -41,6 +44,7 @@ impl Default for ViewInfo {
             snap_to_pixel: false,
             snap_to_point: true,
             corner_widgets: true,
+            snap_to_anchors: false,
             screen: None,
             artboard: 0,
         }
@@ -203,6 +207,7 @@ impl Session {
             snap_to_pixel: view.snap_to_pixel && !view.snap_to_grid,
             snap_to_point: view.snap_to_point,
             corner_widgets: view.corner_widgets,
+            snap_to_anchors: view.snap_to_anchors,
             fill_active: self.fill_active,
             gradient_stop: self.selected_stop(),
             appearance_item: self.appearance_item(),
