@@ -35,7 +35,7 @@ use serde_json::{Map, Value, json};
 const MANIFEST: &str = r#"{
   "id": "org.vectorcraft.intersect",
   "name": "Intersection Anchors",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "kind": "filter",
   "author": "VectorCraft contributors",
   "description": "Anchor points at path crossings (insert or mark, honouring direct-selected anchors), handle angle snapping, tangent-continuous smoothing along a line, and merging of selected anchor points.",
@@ -45,6 +45,22 @@ const MANIFEST: &str = r#"{
     "angle": {"type": "int", "min": 1, "max": 180, "default": 45},
     "flow": {"type": "number", "min": 0, "max": 100, "default": 100},
     "merge": {"type": "choice", "options": ["average", "geometric center", "dominant direction"], "default": "average"}
+  },
+  "tabs": {
+    "param": "mode",
+    "params": {
+      "marker": ["mark"],
+      "angle": ["snap handles"],
+      "flow": ["smooth flow"],
+      "merge": ["merge anchors"]
+    },
+    "descriptions": {
+      "insert": "Inserts an anchor point exactly where two segments or curves cross, without changing the drawn shape. With anchors or segments direct-selected, only crossings between the selected parts are made.",
+      "mark": "Drops a magenta marker dot on every crossing instead of editing the paths, so you see each crossing before committing. One undo removes them all.",
+      "snap handles": "Rotates Bézier handles onto the nearest multiple of the angle step (45°: 0°, 45°, 90°, …), keeping their lengths. With anchors direct-selected, only those anchors' handles snap.",
+      "smooth flow": "Re-fits handles for an even, tangent-continuous flow. Straight segments stay straight, curves merge smoothly into adjoining lines at any angle, and a selected straight line acts as a direction guide. Flow blends from the current handles (0) to fully smoothed (100).",
+      "merge anchors": "Merges two or more direct-selected anchor points into one: average (centroid, mean handles), geometric center (bounding-box centre) or dominant direction (aligned with the strongest handle)."
+    }
   }
 }"#;
 
@@ -555,14 +571,27 @@ fn snap_handles(objects: &[Value], step: f64) -> Value {
     json!({"objects": out})
 }
 
-/// Smooths the targeted anchors' handles for tangent continuity (G1): each anchor's tangent
-/// comes from its neighbours (Catmull-Rom style), handle lengths from a third of each chord, so
-/// several Bézier segments flow evenly instead of fighting each other's old handles. If the
-/// selection also holds a straight guide line (an object made only of handle-less segments) and
-/// at least one other path, the tangents turn onto the line's direction, so the curve follows the
-/// line evenly. `flow` (0–1) blends from the current handles to the smoothed ones. With a direct
-/// selection, only the selected anchors change.
+/// Smooths the targeted anchors' handles for tangent continuity (G1), so several Bézier segments
+/// flow evenly instead of fighting each other's old handles:
+///
+/// - **Straight segments stay straight** — no handles are pushed into them, so lines are never
+///   bent into "jaggy" near-lines.
+/// - **An anchor joining a line and a curve takes the line's direction** as its tangent, whatever
+///   the orientation (horizontal, vertical, diagonal), so the curve merges optically smoothly
+///   into the straight segment instead of kinking at the join.
+/// - Elsewhere the tangent comes from the neighbours (Catmull-Rom style), or from a straight
+///   guide line selected along with the paths (a plain two-anchor handle-less line), which passes
+///   through unchanged.
+/// - Handle lengths are `SMOOTH` (≈ 0.39) of each chord — the ratio of a circular arc's cubic,
+///   noticeably fuller than the usual ⅓ so the curvature spreads out and the result reads smooth
+///   to the eye.
+///
+/// `flow` (0–1) blends from the current handles to the smoothed ones. With a direct selection,
+/// only the selected anchors change.
 fn smooth_flow(objects: &[Value], flow: f64) -> Value {
+    /// Handle length over chord of a cubic tracing a circular arc through its endpoints
+    /// (a quarter circle: r·(4/3)·tan(π/8) over r·√2) — the "optically smooth" fullness.
+    const SMOOTH: f64 = 0.390_524;
     let objs = parse(objects);
     if objs.is_empty() {
         return json!({"error": "Select some paths."});
@@ -593,6 +622,15 @@ fn smooth_flow(objects: &[Value], flow: f64) -> Value {
             .enumerate()
             .map(|(si, s)| {
                 let n = s.anchors.len();
+                // Straight segments are preserved only where they are deliberate: in a subpath
+                // that also has curves. A subpath with no handles at all is a polyline being
+                // smoothed into a curve, so everything participates.
+                let mixed = s.anchors.iter().any(|a| a.inh.is_some() || a.outh.is_some());
+                // The segment from anchor `from` (wrapping) is a straight line: no handles.
+                let seg_straight = |from: usize| {
+                    let to = (from + 1) % n;
+                    mixed && s.anchors.get(from).is_some_and(|a| a.outh.is_none()) && s.anchors.get(to).is_some_and(|a| a.inh.is_none())
+                };
                 let anchors: Vec<Value> = s
                     .anchors
                     .iter()
@@ -616,6 +654,12 @@ fn smooth_flow(objects: &[Value], flow: f64) -> Value {
                         } else {
                             None
                         };
+                        let prev_straight = prev.is_some() && seg_straight(if ai > 0 { ai - 1 } else { n - 1 });
+                        let next_straight = next.is_some() && seg_straight(ai);
+                        if prev_straight && next_straight {
+                            // A corner between two straight lines: leave it a corner.
+                            return Value::Object(raw);
+                        }
                         // The tangent through this anchor: its neighbours' chord, or one-sided.
                         let t = match (prev, next) {
                             (Some(q), Some(r)) => sub(r, q),
@@ -624,21 +668,31 @@ fn smooth_flow(objects: &[Value], flow: f64) -> Value {
                             (None, None) => return Value::Object(raw),
                         };
                         let (mut ux, mut uy) = unit(t);
-                        if let Some(d) = guide_dir {
+                        if prev_straight && let Some(q) = prev {
+                            // The curve must merge with the incoming straight segment: take the
+                            // line's own direction, whatever its angle.
+                            (ux, uy) = unit(sub(a.p, q));
+                        } else if next_straight && let Some(r) = next {
+                            (ux, uy) = unit(sub(r, a.p));
+                        } else if let Some(d) = guide_dir {
                             // Follow the guide line: its direction, signed to match the flow.
-                            let s = if ux * d[0] + uy * d[1] < 0.0 { -1.0 } else { 1.0 };
-                            (ux, uy) = (d[0] * s, d[1] * s);
+                            let sgn = if ux * d[0] + uy * d[1] < 0.0 { -1.0 } else { 1.0 };
+                            (ux, uy) = (d[0] * sgn, d[1] * sgn);
                         }
                         if ux == 0.0 && uy == 0.0 {
                             return Value::Object(raw);
                         }
-                        if let Some(q) = prev {
-                            let len = dist(a.p, q) / 3.0;
+                        if let Some(q) = prev
+                            && !prev_straight
+                        {
+                            let len = dist(a.p, q) * SMOOTH;
                             let target = [a.p[0] - ux * len, a.p[1] - uy * len];
                             set_handle(&mut raw, "in", lerp(a.inh.unwrap_or(a.p), target, flow), a.p);
                         }
-                        if let Some(r) = next {
-                            let len = dist(r, a.p) / 3.0;
+                        if let Some(r) = next
+                            && !next_straight
+                        {
+                            let len = dist(r, a.p) * SMOOTH;
                             let target = [a.p[0] + ux * len, a.p[1] + uy * len];
                             set_handle(&mut raw, "out", lerp(a.outh.unwrap_or(a.p), target, flow), a.p);
                         }
@@ -1034,6 +1088,33 @@ mod tests {
             }
         }
         assert_eq!(out["objects"][1], json!({"id": 2}), "the guide line is untouched");
+    }
+
+    /// In a path mixing lines and curves, `smooth flow` keeps the straight segments straight and
+    /// turns the junction anchor's tangent onto the line's direction — the curve merges with the
+    /// line, horizontal or diagonal alike — with handles fuller than the old third of the chord.
+    #[test]
+    fn smooth_flow_merges_curves_into_straight_segments() {
+        for (a0, a1) in [([0.0, 0.0], [100.0, 0.0]), ([0.0, 0.0], [100.0, 100.0])] {
+            // A straight first segment, then a curved one.
+            let path = json!({"id": 1, "type": "path", "path": {"subpaths": [{"closed": false, "anchors": [
+                {"p": a0},
+                {"p": a1, "out": [a1[0] + 20.0, a1[1] + 30.0]},
+                {"p": [a1[0] + 100.0, a1[1] + 100.0], "in": [a1[0] + 80.0, a1[1] + 80.0]}]}]}});
+            let out = run(&json!({"objects": [path]}), &json!({"mode": "smooth flow", "flow": 100}));
+            let a = anchors(&out, 0, 0);
+            // The line stays a line: no handles pushed into the straight segment.
+            assert!(a[0].get("out").is_none() && a[1].get("in").is_none(), "straight stays straight: {out}");
+            // The junction's out handle continues the line's own direction.
+            let dir = unit(sub(a1, a0));
+            let h = [a[1]["out"][0].as_f64().unwrap() - a1[0], a[1]["out"][1].as_f64().unwrap() - a1[1]];
+            let (hx, hy) = unit(h);
+            assert!((hx - dir.0).abs() < 1e-9 && (hy - dir.1).abs() < 1e-9, "merges with the line: {out}");
+            // Fuller than the old third of the chord: the circle-arc ratio.
+            let chord = dist(a1, [a1[0] + 100.0, a1[1] + 100.0]);
+            let len = dist(h, [0.0, 0.0]);
+            assert!(len > chord / 3.0 && (len - chord * 0.390_524).abs() < 1e-6, "stronger handles: {len} of {chord}");
+        }
     }
 
     /// `merge anchors` needs a direct selection of two or more anchors, collapses consecutive

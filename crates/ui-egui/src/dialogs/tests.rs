@@ -485,7 +485,7 @@ impl PluginIntField {
     fn run(&mut self, events: Vec<egui::Event>) -> egui::FullOutput {
         let (d, specs) = (&mut self.d, &self.specs);
         let mut out = self.ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
-            form::schema_fields(ui, d, specs);
+            form::schema_fields(ui, d, specs, None);
         });
         out.textures_delta.clear();
         out
@@ -536,6 +536,60 @@ fn plugin_integer_field_with_small_bounds_keeps_numeric_editing() {
     for (text, expected) in [("7", 7), ("2 + 3", 5), ("17", 16)] {
         assert_eq!(f.type_text(text), json!(expected), "{text}");
     }
+}
+
+/// A plug-in manifest with `tabs` gets a real tab row: only the active tab's parameters show, and
+/// clicking another tab switches both the stored mode and the parameters below.
+#[test]
+fn plugin_dialog_tabs_show_only_the_active_tabs_parameters() {
+    let ctx = egui::Context::default();
+    theme::install_fonts(&ctx);
+    theme::apply(&ctx, Default::default());
+    let specs: Vec<(String, vectorcraft_plugins::ParamSpec)> = vec![
+        ("mode".into(), vectorcraft_plugins::ParamSpec::Choice { options: vec!["alpha".into(), "beta".into()], default: None }),
+        ("width".into(), vectorcraft_plugins::ParamSpec::Number { min: 0.0, max: 1.0, default: 0.5 }),
+        ("depth".into(), vectorcraft_plugins::ParamSpec::Number { min: 0.0, max: 1.0, default: 0.5 }),
+    ];
+    let tabs = vectorcraft_plugins::Tabs {
+        param: "mode".into(),
+        params: [("width".to_string(), vec!["alpha".to_string()]), ("depth".to_string(), vec!["beta".to_string()])].into_iter().collect(),
+        descriptions: [("alpha".to_string(), "About alpha.".to_string()), ("beta".to_string(), "About beta.".to_string())].into_iter().collect(),
+    };
+    let mut d = Dialog::new(plugin::KIND, json!({"mode": "alpha"}));
+    let frame = |d: &mut Dialog, events: Vec<egui::Event>| {
+        let mut out = ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
+            form::schema_fields(ui, d, &specs, Some(&tabs));
+        });
+        out.textures_delta.clear();
+        out
+    };
+    fn texts(shape: &egui::Shape, into: &mut Vec<(String, egui::Rect)>) {
+        match shape {
+            egui::Shape::Text(t) => into.push((t.galley.text().to_string(), t.visual_bounding_rect())),
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| texts(s, into)),
+            _ => {}
+        }
+    }
+    let all = |out: &egui::FullOutput| {
+        let mut v = Vec::new();
+        out.shapes.iter().for_each(|s| texts(&s.shape, &mut v));
+        v
+    };
+    let out = frame(&mut d, vec![]);
+    let shown = all(&out);
+    let has = |shown: &[(String, egui::Rect)], text: &str| shown.iter().any(|(t, _)| t == text);
+    assert!(has(&shown, "alpha") && has(&shown, "beta"), "both tabs are in the row");
+    assert!(has(&shown, "About alpha.") && !has(&shown, "About beta."), "the active tab's description shows");
+    assert!(has(&shown, "Width:") && !has(&shown, "Depth:"), "only the active tab's parameter shows");
+    // Clicking the other tab switches the stored mode and the parameters.
+    let pos = shown.iter().find(|(t, _)| t == "beta").unwrap().1.center();
+    let button = egui::PointerButton::Primary;
+    frame(&mut d, vec![egui::Event::PointerMoved(pos), egui::Event::PointerButton { pos, button, pressed: true, modifiers: Default::default() }]);
+    frame(&mut d, vec![egui::Event::PointerButton { pos, button, pressed: false, modifiers: Default::default() }]);
+    assert_eq!(d.fields["mode"], json!("beta"));
+    let shown = all(&frame(&mut d, vec![]));
+    assert!(!has(&shown, "Width:") && has(&shown, "Depth:"), "the tab switch swaps the parameters");
+    assert!(has(&shown, "About beta.") && !has(&shown, "About alpha."), "the tab switch swaps the description");
 }
 
 #[test]

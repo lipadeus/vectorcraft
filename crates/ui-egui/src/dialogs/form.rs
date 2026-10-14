@@ -353,13 +353,50 @@ fn typed_number(x: f64) -> Value {
 /// Editor for a plug-in's parameters from its schema (plug-in filter and effect dialogs): numbers
 /// within their range, whole numbers, checkboxes and dropdowns, in declaration order. Returns
 /// true when a value changed. The labels (from the parameter keys) and choices are the plug-in's
-/// text, shown as they are.
-pub(super) fn schema_fields(ui: &mut egui::Ui, d: &mut Dialog, specs: &[(String, vectorcraft_plugins::ParamSpec)]) -> bool {
+/// text, shown as they are. A manifest with `tabs` gets its tab parameter as a real tab row, the
+/// active tab's description under it, and only the active tab's parameters below that.
+pub(super) fn schema_fields(
+    ui: &mut egui::Ui,
+    d: &mut Dialog,
+    specs: &[(String, vectorcraft_plugins::ParamSpec)],
+    tabs: Option<&vectorcraft_plugins::Tabs>,
+) -> bool {
     use vectorcraft_plugins::ParamSpec;
     let t = Tokens::get(ui.ctx());
     let mut changed = false;
+    // The tab row: the tab parameter's options, the stored value selected, a click stores it.
+    let active_tab = tabs.and_then(|tabs| {
+        let (k, spec) = specs.iter().find(|(k, _)| *k == tabs.param)?;
+        let ParamSpec::Choice { options, .. } = spec else { return None };
+        let cur = d.fields.get(k).cloned().unwrap_or_else(|| spec.default_value());
+        let labels: Vec<&str> = options.iter().map(String::as_str).collect();
+        let current = options.iter().position(|o| Some(o.as_str()) == cur.as_str()).unwrap_or(0);
+        if let Some(i) = crate::widgets::tab_bar(ui, &labels, current)
+            && let Some(o) = options.get(i)
+        {
+            d.fields.insert(k.clone(), json!(o));
+            changed = true;
+            return Some(o.clone());
+        }
+        options.get(current).cloned()
+    });
+    if let Some(tab) = &active_tab {
+        ui.add_space(8.0);
+        // The active tab's description, before its fields.
+        if let Some(text) = tabs.and_then(|tabs| tabs.descriptions.get(tab)).filter(|s| !s.is_empty()) {
+            ui.label(egui::RichText::new(text).color(t.text_dim));
+            ui.add_space(8.0);
+        }
+    }
+    // A parameter is shown when no tabs apply, it is listed on the active tab, or it is unlisted
+    // (shared by every tab). The tab parameter itself is the row above.
+    let shown = |k: &String| match (tabs, &active_tab) {
+        (Some(tabs), Some(_)) if *k == tabs.param => false,
+        (Some(tabs), Some(tab)) => tabs.params.get(k).is_none_or(|on| on.contains(tab)),
+        _ => true,
+    };
     egui::Grid::new("plugin-grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-        for (k, spec) in specs {
+        for (k, spec) in specs.iter().filter(|(k, _)| shown(k)) {
             ui.label(egui::RichText::new(humanize(k)).color(t.text));
             let cur = d.fields.get(k).cloned().unwrap_or_else(|| spec.default_value());
             let new = match spec {

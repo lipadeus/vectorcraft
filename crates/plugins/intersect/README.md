@@ -1,19 +1,18 @@
 # Intersection Anchors — a VectorCraft plug-in
 
 A WebAssembly object-filter plug-in (plug-in ABI v1, see [`docs/plugins.md`](../../../docs/plugins.md))
-for working with crossing lines and Bézier curves. It has five modes, picked with the dialog's
-`mode` dropdown; **each mode is documented in its own section below** ("tab"), so you always know
-which mode does what and which parameters it reads. ABI v1 dialogs are generated from the
-manifest and have no real tab widget — the `mode` dropdown plus these sections are the
-equivalent.
+for working with crossing lines and Bézier curves. It has five tools, shown in the dialog as a
+**row of real tabs** (the manifest's `tabs` layout): clicking a tab picks the tool, shows that
+tab's own description and then only that tool's input fields, so nothing gets mixed up. **Each
+tab is documented in its own section below.**
 
-| Mode ("tab") | What it does | Parameters it reads |
+| Tab | What it does | Its parameters |
 |---|---|---|
-| [insert](#tab-insert) | Anchor points at crossings | `mode` |
-| [mark](#tab-mark) | Magenta markers on crossings | `mode`, `marker` |
-| [snap handles](#tab-snap-handles) | Quantise handle angles | `mode`, `angle` |
-| [smooth flow](#tab-smooth-flow) | Even, tangent-continuous curves, optionally along a line | `mode`, `flow` |
-| [merge anchors](#tab-merge-anchors) | Merge selected anchor points into one | `mode`, `merge` |
+| [insert](#tab-insert) | Anchor points at crossings | — |
+| [mark](#tab-mark) | Magenta markers on crossings | `marker` |
+| [snap handles](#tab-snap-handles) | Quantise handle angles | `angle` |
+| [smooth flow](#tab-smooth-flow) | Even, tangent-continuous curves that merge with straight lines | `flow` |
+| [merge anchors](#tab-merge-anchors) | Merge selected anchor points into one | `merge` |
 
 ## Installing
 
@@ -88,10 +87,18 @@ preference). A plug-in cannot change pointer behaviour; this mode is the batch c
 ### Tab: smooth flow
 
 Re-fits the handles of the selected curves so the path flows evenly — no kinks, no bulges from
-mismatched handles. Each anchor's tangent is taken from the direction between its neighbours
-(a Catmull-Rom tangent) and both handles are placed on it at a third of the chord length, giving
-**G1 (tangent) continuity** through every interior anchor; the anchors themselves don't move, so
-the path stays where you drew it.
+mismatched handles, giving **G1 (tangent) continuity** through every interior anchor. The anchors
+themselves don't move, so the path stays where you drew it.
+
+- **Straight segments stay straight.** In a path mixing lines and curves, no handles are pushed
+  into the handle-less segments, so lines are never bent into jagged near-lines. (A path with no
+  handles at all is a polyline being smoothed, so there everything participates.)
+- **Curves merge into lines.** An anchor joining a straight segment and a curve takes the line's
+  own direction as its tangent — horizontal, vertical or diagonal alike — so the curve continues
+  the line optically smoothly instead of kinking at the join.
+- Elsewhere the tangent comes from the neighbours (a Catmull-Rom tangent), and the handle
+  lengths are ≈ 0.39 of each chord — the ratio of a circular arc's cubic, noticeably fuller
+  than the usual ⅓, so the curvature spreads out and the result reads smooth to the eye.
 
 **Following a line:** select a straight line (a plain two-anchor segment) *together with* the
 curves, and the curves' tangents are turned to follow the line's direction — the way to make a
@@ -137,9 +144,6 @@ anchor (shared endpoints, segments meeting at a point) is skipped.
   alter drag behaviour. Hover-highlighting a crossing before clicking is therefore approximated by
   the dialog's live preview (`mark` mode), and interactive snapping is left to the app's built-in
   Shift constraint.
-- **No tabs in generated dialogs**: ABI v1 dialogs are a flat list of parameters. The `mode`
-  dropdown plus the per-mode sections above are the workaround; parameters not read by the
-  current mode are simply ignored.
 - Collinear overlapping segments (lines lying on top of each other) have no single crossing point
   and are ignored.
 - Tangential touches may be reported as a crossing when the curves actually meet within the

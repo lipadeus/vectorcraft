@@ -28,7 +28,7 @@ pub mod registry;
 mod runtime;
 pub mod wat;
 
-pub use manifest::{Kind, Manifest, ParamSpec};
+pub use manifest::{Kind, Manifest, ParamSpec, Tabs};
 pub use runtime::{ABI_VERSION, Limits, Plugin};
 
 /// A plug-in error. Every way a module can misbehave ends here, never in a panic.

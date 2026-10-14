@@ -113,6 +113,11 @@ pointers are offsets into the module's memory.
   `preview`. The host validates the user's values before calling: missing values take the default, numbers are
   clamped to `min..max` (ints rounded), a wrong type or an unknown choice is an error. Numeric defaults
   are also clamped to their range, including the implicit zero default of an `int` parameter.
+- `tabs` (optional): lays the dialog out as tabs. `param` names a declared `choice` parameter whose options become a
+  row of tabs; `params` maps other parameter names to the tabs they are shown on (an unlisted parameter shows on
+  every tab); `descriptions` maps tabs to a text (≤ 1024 bytes) shown under the tab row, above that tab's
+  parameters. Example: `"tabs": {"param": "mode", "params": {"amount": ["soft"]}, "descriptions": {"soft": "…"}}`.
+  Hosts without tab support simply show the plain parameter list.
 
 ### Input
 
