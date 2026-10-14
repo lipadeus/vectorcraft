@@ -108,7 +108,33 @@ pub fn encode(n: &Node) -> Option<Value> {
 /// The input document of a filter run: `{"objects": [...]}` for `ids` (paths and compound paths;
 /// others are left out).
 pub fn encode_input(doc: &Document, ids: &[NodeId]) -> Vec<u8> {
-    let objects: Vec<Value> = ids.iter().filter_map(|id| doc.node(*id)).filter_map(encode).collect();
+    encode_input_selected(doc, ids, &Default::default(), &Default::default())
+}
+
+/// [`encode_input`] with the user's direct selection: an object some of whose anchors or segments
+/// are direct-selected carries them as `selectedAnchors` / `selectedSegments` (`[[subpath,
+/// index], …]`, sorted); a fully selected object carries neither key.
+pub fn encode_input_selected(
+    doc: &Document,
+    ids: &[NodeId],
+    anchors: &std::collections::BTreeMap<NodeId, std::collections::BTreeSet<(usize, usize)>>,
+    segments: &std::collections::BTreeMap<NodeId, std::collections::BTreeSet<(usize, usize)>>,
+) -> Vec<u8> {
+    let refs = |set: &std::collections::BTreeSet<(usize, usize)>| set.iter().map(|(si, ai)| json!([si, ai])).collect::<Vec<Value>>();
+    let objects: Vec<Value> = ids
+        .iter()
+        .filter_map(|id| doc.node(*id))
+        .filter_map(|n| {
+            let mut o = encode(n)?;
+            if let Some(set) = anchors.get(&n.id).filter(|s| !s.is_empty()) {
+                o["selectedAnchors"] = json!(refs(set));
+            }
+            if let Some(set) = segments.get(&n.id).filter(|s| !s.is_empty()) {
+                o["selectedSegments"] = json!(refs(set));
+            }
+            Some(o)
+        })
+        .collect();
     serde_json::to_vec(&json!({ "objects": objects })).unwrap_or_default()
 }
 

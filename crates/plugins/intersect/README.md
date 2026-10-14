@@ -1,19 +1,19 @@
 # Intersection Anchors — a VectorCraft plug-in
 
 A WebAssembly object-filter plug-in (plug-in ABI v1, see [`docs/plugins.md`](../../../docs/plugins.md))
-for working with crossing lines and Bézier curves:
+for working with crossing lines and Bézier curves. It has five modes, picked with the dialog's
+`mode` dropdown; **each mode is documented in its own section below** ("tab"), so you always know
+which mode does what and which parameters it reads. ABI v1 dialogs are generated from the
+manifest and have no real tab widget — the `mode` dropdown plus these sections are the
+equivalent.
 
-- **insert** — finds every point where two segments of the selection cross (line–line, line–curve,
-  curve–curve; between objects, between subpaths, and a subpath crossing itself) and inserts an
-  anchor point exactly at each crossing. Curves are split with de Casteljau, so the drawn shape
-  does not change — only new, editable anchors appear.
-- **mark** — instead of editing the paths, drops a small **magenta** marker dot on top of each
-  crossing. Magenta contrasts with the usual black strokes and with the app's blue anchor and
-  selection chrome, so markers are easy to tell apart from ordinary control points. One undo step
-  removes them all.
-- **snap handles** — rotates every Bézier handle of the selection onto the nearest multiple of
-  the `angle` parameter (45° by default: 0°, 45°, 90°, 135°, 180°, …), keeping each handle's
-  length. Smooth anchors stay smooth: their two handles stay collinear.
+| Mode ("tab") | What it does | Parameters it reads |
+|---|---|---|
+| [insert](#tab-insert) | Anchor points at crossings | `mode` |
+| [mark](#tab-mark) | Magenta markers on crossings | `mode`, `marker` |
+| [snap handles](#tab-snap-handles) | Quantise handle angles | `mode`, `angle` |
+| [smooth flow](#tab-smooth-flow) | Even, tangent-continuous curves, optionally along a line | `mode`, `flow` |
+| [merge anchors](#tab-merge-anchors) | Merge selected anchor points into one | `mode`, `merge` |
 
 ## Installing
 
@@ -35,26 +35,92 @@ for working with crossing lines and Bézier curves:
 
 ## Using it
 
-Select the paths you care about and run **Object › Plug-ins › Intersection Anchors**. The dialog
-shows the parameters with a **live preview**, so with `mark` (or `insert`) you see every crossing
-highlighted on the canvas *before* you click OK — that preview is how "show the crossing before
-the anchor is created" works within the plug-in API.
+Select what you care about and run **Object › Plug-ins › Intersection Anchors**. The dialog shows
+the parameters with a **live preview**, so you see the result on the canvas *before* you click
+OK — that preview is how "show what will be affected before the change" works within the plug-in
+API. Everything runs as one undo step.
 
-| Parameter | Meaning |
-|---|---|
-| `mode` | `insert` (anchors at crossings), `mark` (magenta markers only), `snap handles` (quantise handle angles). |
-| `marker` | Marker diameter in pt (`mark` mode), 1–50, default 5. |
-| `angle` | Angle step in degrees (`snap handles` mode), 1–180, default 45. |
+### Your selection matters
 
-Everything runs as one undo step.
+The plug-in respects the **direct selection** (Direct Selection tool). Every object reaches the
+plug-in with its direct-selected anchors and segments attached:
 
-### Interactive Shift-snapping
+- **Whole object selected** (Selection tool, or no anchors picked) — the whole object
+  participates.
+- **Segments selected** — only those segments participate.
+- **Anchor points selected** — the anchors themselves participate (snap handles, merge anchors),
+  and every segment touching a selected anchor participates (insert, mark, smooth flow).
 
-Dragging a handle **while holding Shift already snaps to 45° steps natively** in VectorCraft's
-Direct Selection, Anchor Point and Pen tools (the same `constrain_angle` logic that constrains
-rotated lines, honouring the General › Constrain Angle preference). This plug-in does not — and
-cannot — change pointer behaviour; its `snap handles` mode is the batch companion: it cleans up
-all the selection's handles onto the angle grid in one go.
+So to create an anchor at one specific crossing out of many, direct-select the two crossing
+segments (or an anchor of each) and run `insert`: only crossings between participating segments
+are made. If the parts you selected don't cross anything, the dialog says so explicitly instead
+of silently doing nothing.
+
+---
+
+### Tab: insert
+
+Finds every point where two **participating** segments cross (line–line, line–curve, curve–curve;
+between objects, between subpaths, and a subpath crossing itself) and inserts an anchor point
+exactly at each crossing. Curves are split with de Casteljau, so the drawn shape does not
+change — only new, editable anchors appear. The live preview shows the new anchors before OK.
+
+### Tab: mark
+
+Instead of editing the paths, drops a small **magenta** marker dot on top of each crossing
+(diameter: the `marker` parameter, 1–50 pt, default 5). Magenta contrasts with the usual black
+strokes and with the app's blue anchor and selection chrome, so markers are easy to tell apart
+from ordinary control points. One undo step removes them all. Honours the direct selection the
+same way as `insert`, so you can preview exactly the crossings that `insert` would use.
+
+### Tab: snap handles
+
+Rotates Bézier handles onto the nearest multiple of the `angle` parameter (45° by default: 0°,
+45°, 90°, 135°, 180°, …), keeping each handle's length. Smooth anchors stay smooth: their two
+handles stay collinear. With anchor points direct-selected, **only those anchors'** handles are
+snapped; otherwise the whole selection's.
+
+**Interactive Shift-snapping:** dragging a handle **while holding Shift already snaps to 45°
+steps natively** in VectorCraft's Direct Selection, Anchor Point and Pen tools (the same
+`constrain_angle` logic that constrains rotated lines, honouring the General › Constrain Angle
+preference). A plug-in cannot change pointer behaviour; this mode is the batch companion.
+
+### Tab: smooth flow
+
+Re-fits the handles of the selected curves so the path flows evenly — no kinks, no bulges from
+mismatched handles. Each anchor's tangent is taken from the direction between its neighbours
+(a Catmull-Rom tangent) and both handles are placed on it at a third of the chord length, giving
+**G1 (tangent) continuity** through every interior anchor; the anchors themselves don't move, so
+the path stays where you drew it.
+
+**Following a line:** select a straight line (a plain two-anchor segment) *together with* the
+curves, and the curves' tangents are turned to follow the line's direction — the way to make a
+run of Bézier segments ride evenly along a drawn direction. The line itself is never modified.
+
+`flow` (0–100 %, default 100) blends between the original handles (0) and the fully smoothed
+ones (100), with live preview. With anchors direct-selected, only those anchors are re-fitted.
+
+### Tab: merge anchors
+
+Merges direct-selected anchor points into one. **Requires** two or more anchors picked with the
+Direct Selection tool — with anything less the dialog explains exactly what to select, so you
+always get feedback instead of a silent no-op.
+
+- Consecutive selected anchors on the same subpath collapse into a single anchor (the segments
+  between them disappear); selections on different subpaths or objects each move their anchor to
+  the same shared point, closing gaps between endpoints.
+- The surviving anchor's position and handles come from the `merge` method:
+
+| `merge` method | New position | New handles |
+|---|---|---|
+| `average` | Centroid (mean) of the selected anchors | Mean of the members' handle vectors |
+| `geometric center` | Centre of the selected anchors' bounding box | Mean of the members' handle vectors |
+| `dominant direction` | Centroid | Aligned with the longest selected handle, lengths kept — the merged anchor becomes `Smooth` |
+
+The differences between the merged points' positions and handles are averaged (or, for
+`dominant direction`, projected onto the strongest handle's axis), so the merged point gets a
+stable position *and* a reasonable curve behaviour; neighbouring anchors are untouched, which
+keeps the rest of the curve's shape.
 
 ## How crossings are found
 
@@ -71,6 +137,9 @@ anchor (shared endpoints, segments meeting at a point) is skipped.
   alter drag behaviour. Hover-highlighting a crossing before clicking is therefore approximated by
   the dialog's live preview (`mark` mode), and interactive snapping is left to the app's built-in
   Shift constraint.
+- **No tabs in generated dialogs**: ABI v1 dialogs are a flat list of parameters. The `mode`
+  dropdown plus the per-mode sections above are the workaround; parameters not read by the
+  current mode are simply ignored.
 - Collinear overlapping segments (lines lying on top of each other) have no single crossing point
   and are ignored.
 - Tangential touches may be reported as a crossing when the curves actually meet within the
@@ -79,9 +148,14 @@ anchor (shared endpoints, segments meeting at a point) is skipped.
   symbols). Caps: 20,000 segments and 4,096 crossings per run.
 - Markers are plain filled paths: they don't follow the geometry afterwards and are meant to be
   deleted (or undone) when you're done looking.
+- `merge anchors` keeps the neighbours' handles as they are; after a large merge the adjoining
+  segments can change shape near the merged point (run `smooth flow` after it to even them out).
+- `smooth flow`'s guide must be a plain two-anchor straight line; polylines and curves are
+  smoothed, not used as guides.
 
 ## Development
 
-Native unit tests (geometry, insertion, snapping): `cargo test` in this folder. The crate is not a
-member of the VectorCraft workspace. `plan.md` records the design plan, assumptions and possible
-follow-ups for other developers or agents extending this plug-in.
+Native unit tests (geometry, insertion, snapping, selection handling, smoothing, merging):
+`cargo test` in this folder. The crate is not a member of the VectorCraft workspace. `plan.md`
+records the design plan, assumptions and possible follow-ups for other developers or agents
+extending this plug-in.
