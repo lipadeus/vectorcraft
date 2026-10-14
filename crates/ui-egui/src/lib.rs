@@ -626,6 +626,7 @@ impl VectorcraftApp {
             show_bbox: self.ui.view.bounding_box,
             snap_to_point: self.ui.view.snap_to_point,
             corner_widgets: self.ui.view.corner_widgets,
+            snap_to_anchors: self.ui.view.snap_to_anchors,
             screen: self.screen_frame(),
         }
     }

@@ -33,7 +33,7 @@ pub mod find_links;
 pub mod flare_options;
 pub mod flatten;
 pub mod flattener_presets;
-mod form;
+pub(crate) mod form;
 pub mod freehand;
 mod gradient_stop;
 pub mod graph_data;

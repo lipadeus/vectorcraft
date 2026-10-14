@@ -33,6 +33,7 @@ pub mod opentype;
 pub mod paragraph;
 pub mod pathfinder;
 pub mod pattern_options;
+pub mod plugins;
 pub mod properties;
 pub mod separations;
 pub mod stroke;
@@ -174,6 +175,7 @@ pub fn show_icon_panel(app: &mut VectorcraftApp, ui: &mut Ui, id: &str) {
         links::ID => links::show(app, ui),
         asset_export::ID => asset_export::show(app, ui),
         css_properties::ID => css_properties::show(app, ui),
+        plugins::ID => plugins::show(app, ui),
         _ => {
             dim_label(ui, tl!("This panel is on the roadmap (see the parity plan)."));
         }

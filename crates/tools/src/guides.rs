@@ -48,6 +48,8 @@ impl GuideStyle {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Kind {
     Anchor,
+    /// A Bézier direction handle's end (Snap to Anchors).
+    Handle,
     Center,
     Edge,
     Artboard,
@@ -59,6 +61,7 @@ impl Kind {
     fn label(self) -> &'static str {
         match self {
             Kind::Anchor => "anchor",
+            Kind::Handle => "handle",
             Kind::Center => "center",
             Kind::Edge => "path",
             Kind::Artboard => "artboard",
@@ -239,6 +242,35 @@ impl Targets {
         self.ys.push((a.y, a, Kind::Anchor));
     }
 
+    /// With Snap to Anchors on, the Bézier direction handle ends of the document's paths as
+    /// point targets too, skipping the handles of `sel`'s direct-selected anchors (they move with
+    /// the drag and would chase it): at most [`BUDGET`] of them.
+    pub fn with_control_points(mut self, cx: &ToolContext) -> Self {
+        if !cx.snap_to_anchors {
+            return self;
+        }
+        let mut budget = BUDGET;
+        walk_but(&cx.doc.layers, &HashSet::new(), &mut |n| {
+            if budget == 0 || n.is_container() || !n.visible {
+                return;
+            }
+            let NodeKind::Path { path, .. } = &n.kind else { return };
+            let moving = |si: usize, ai: usize| cx.selection.anchors.get(&n.id).is_some_and(|set| set.contains(&(si, ai)));
+            for (si, ai, a) in path.anchors() {
+                if moving(si, ai) {
+                    continue;
+                }
+                for h in [a.h_in, a.h_out] {
+                    if budget > 0 && h != a.p {
+                        self.points.push((h, Kind::Handle));
+                        budget -= 1;
+                    }
+                }
+            }
+        });
+        self.index()
+    }
+
     /// The same targets drawing their guides as the Smart Guides preferences in `cx` ask
     /// ([`GuideStyle::of`]).
     pub fn styled(mut self, cx: &ToolContext) -> Self {
@@ -354,9 +386,10 @@ impl Targets {
         t.index()
     }
 
-    /// Only these targets' anchors pull (View → Snap to Point).
+    /// Only these targets' anchors pull (View → Snap to Point), and their Bézier handle ends when
+    /// Snap to Anchors gathered them ([`Self::with_control_points`]).
     pub(crate) fn anchors_only(mut self) -> Self {
-        self.points.retain(|(_, k)| *k == Kind::Anchor);
+        self.points.retain(|(_, k)| matches!(*k, Kind::Anchor | Kind::Handle));
         self.xs.clear();
         self.ys.clear();
         self.segments.clear();
@@ -917,6 +950,26 @@ impl PointSnap {
         Self { targets }
     }
 
+    /// Snapping for a dragged anchor or direction handle: as [`Self::new`], and with Snap to
+    /// Anchors on (the Plug-ins panel) the targets gain the Bézier handle ends
+    /// ([`Targets::with_control_points`]) and keep pulling — to the anchors, handle ends and ruler
+    /// guides — even with Smart Guides and Snap to Point off.
+    pub fn for_reshape(cx: &ToolContext, targets: impl FnOnce() -> Targets) -> Self {
+        if !cx.snap_to_anchors {
+            return Self::new(cx, targets);
+        }
+        if cx.snap_to_pixel || cx.snap_to_grid {
+            return Self { targets: None };
+        }
+        let t = targets().with_control_points(cx);
+        let targets = if cx.smart_guides {
+            Some((t.styled(cx).with_rulers(cx), cx.snapping_tolerance))
+        } else {
+            Some((t.anchors_only().with_rulers(cx), cx.snap_tolerance))
+        };
+        Self { targets }
+    }
+
     /// Where `p` goes, and the guides showing why.
     pub fn snap(&self, cx: &ToolContext, p: Point) -> (Point, Vec<Overlay>) {
         self.snap_from(cx, p, None)
@@ -1100,6 +1153,13 @@ impl DrawSnap {
         self.guides.clear();
     }
 
+    /// [`Self::hold`] for a dragged anchor or direction handle ([`PointSnap::for_reshape`]): with
+    /// Snap to Anchors on it pulls to anchors and Bézier handle ends whatever the View snapping.
+    pub fn hold_reshape(&mut self, cx: &ToolContext, targets: impl FnOnce() -> Targets) {
+        self.targets = Some((None, PointSnap::for_reshape(cx, targets)));
+        self.guides.clear();
+    }
+
     /// Snap `p`, dragged since the press, with the targets the press gathered.
     pub fn drag(&mut self, cx: &ToolContext, p: Point, from: Option<&Leave>) -> Point {
         if self.targets.is_none() {
@@ -1148,7 +1208,7 @@ impl HandleSnap {
             return (a.p + constrain_angle_from(p - a.p, 45.0, cx.constrain_angle), vec![]);
         }
         if self.0.targets.is_none() {
-            self.0.hold(cx, || Targets::for_handle(cx.doc, id));
+            self.0.hold_reshape(cx, || Targets::for_handle(cx.doc, id));
         }
         let q = self.0.drag(cx, p, None);
         (q, self.0.guides().to_vec())
@@ -1181,6 +1241,35 @@ mod tests {
         d.setup.bleed = [10.0; 4];
         let t = Targets::collect(&d, &[], None);
         assert_eq!(t.snap_point(Point::new(512.0, 300.0), 4.0).0.x, 510.0);
+    }
+
+    #[test]
+    fn snap_to_anchors_pulls_dragged_points_to_anchors_and_handle_ends() {
+        let (mut d, _) = doc_with_rect();
+        let l = d.layers[0].id;
+        let id = d.alloc_id();
+        let mut sp = SubPath::polyline(&[Point::new(300.0, 300.0), Point::new(400.0, 300.0)], false);
+        sp.anchors[0].h_out = Point::new(330.0, 340.0);
+        let node = vectorcraft_doc::Node::path(id, vectorcraft_geom::PathData::single(sp), vectorcraft_doc::Appearance::default_art());
+        d.insert(Some(l), 1, node).unwrap();
+        let (s, p) = (Selection::default(), paint());
+        let base = cx(&d, &s, &p);
+        let on = ToolContext { smart_guides: false, snap_to_point: false, snap_to_anchors: true, ..base };
+        let snap = PointSnap::for_reshape(&on, || Targets::for_anchor_drag(on.doc, on.selection));
+        // A dragged anchor lands on another anchor point…
+        assert_eq!(snap.snap(&on, Point::new(101.5, 99.0)).0, Point::new(100.0, 100.0));
+        // …and on a Bézier handle end, labelled "handle".
+        let (q, ov) = snap.snap(&on, Point::new(331.0, 338.5));
+        assert_eq!(q, Point::new(330.0, 340.0));
+        assert!(ov.iter().any(|o| matches!(o, Overlay::Label { text, .. } if text == "handle")), "{ov:?}");
+        // The checkbox off, with Smart Guides and Snap to Point off nothing pulls.
+        let off = ToolContext { smart_guides: false, snap_to_point: false, ..base };
+        let snap = PointSnap::for_reshape(&off, || Targets::for_anchor_drag(off.doc, off.selection));
+        assert_eq!(snap.snap(&off, Point::new(101.5, 99.0)).0, Point::new(101.5, 99.0));
+        // With Smart Guides on, Snap to Anchors adds the handle ends to their targets.
+        let smart = ToolContext { snap_to_anchors: true, ..base };
+        let snap = PointSnap::for_reshape(&smart, || Targets::for_anchor_drag(smart.doc, smart.selection));
+        assert_eq!(snap.snap(&smart, Point::new(331.0, 338.5)).0, Point::new(330.0, 340.0));
     }
 
     #[test]

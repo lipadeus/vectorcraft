@@ -65,6 +65,18 @@ function ("tabs").
 - **A9 — merge needs a direct selection**: merging all anchors of a whole-selected object is
   never what the user means, so `merge anchors` requires ≥ 2 direct-selected anchors and
   otherwise declines with instructions (the "clear feedback" UX requirement).
+- **A10 — live snapping is a host feature (round 4)**: ABI v1 plug-ins get no pointer events, so
+  "dragged Bézier anchors snap to other anchors live" cannot be a plug-in. The host grew a
+  **Snap to Anchors** toggle (the Plug-ins panel): with it on, a dragged anchor or direction
+  handle snaps to the other anchor points **and Bézier handle ends** (plus ruler guides), even
+  with Smart Guides and Snap to Point off; View → Snap to Grid/Pixel still take over while on.
+  Implementation: `ToolContext::snap_to_anchors` → `Targets::with_control_points` (handle ends as
+  `Kind::Handle` targets, labelled "handle") → `PointSnap::for_reshape` used by the Direct
+  Selection anchor drags and `HandleSnap`.
+- **A11 — the Plug-ins panel (round 4)**: plug-ins also cannot declare panels, so the host got a
+  generic **Window → Plug-ins** panel: the Snap to Anchors checkbox, every installed filter
+  plug-in as a collapsible section with its full tabbed parameter form (the same
+  `form::schema_fields` as the dialog) and an Apply button, plus Install/Reload.
 
 ## 3. Design (done)
 
@@ -126,6 +138,9 @@ function ("tabs").
       parameters — in the plug-in dialog (manifest validation, `schema_fields`, UI test,
       `docs/plugins.md`); `smooth flow` rework —
       straight segments preserved, line–curve junctions merge with the line, 0.39-chord handles
+- [x] Round 4 (host): **Snap to Anchors** — dragged anchors/handles snap live to anchor points
+      and Bézier handle ends (tools test) — and the **Plug-ins panel** (Window menu): the
+      snapping checkbox + installed plug-ins with their tabbed parameters and Apply (panel test)
 
 ## 5. Possible follow-ups (for the next agent/developer)
 
