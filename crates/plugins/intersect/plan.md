@@ -51,10 +51,14 @@ function ("tabs").
 - **A6 — selection in the input (round 2)**: ABI v1 input had no direct-selection information, so
   the host was extended additively (see §1). Older plug-ins ignore the new keys; this plug-in
   treats an object without them as fully selected.
-- **A7 — no tabs in generated dialogs**: ABI v1 dialogs are a flat parameter list; there is no
-  tab widget. Workaround: the `mode` dropdown is the "tab selector", each mode reads only its own
-  parameters (others are ignored), and the README documents each mode in its own section with a
-  mode→parameter table.
+- **A7 — dialog tabs (superseded in round 3)**: ABI v1 dialogs were a flat parameter list, so
+  round 2 shipped a `mode`-dropdown workaround. The user rejected the dropdown, so round 3
+  extended the manifest additively with an optional `tabs` key (`{"param": "mode", "params":
+  {"marker": ["mark"], …}, "descriptions": {…}}`): the host dialog renders that choice as a real
+  tab row (`widgets::tab_bar`, the New Document/Document Setup tab style), shows the active tab's
+  description under the row, and only the active tab's
+  parameters. Old hosts ignore the key and show the plain list; `Manifest::validate` checks the
+  tab parameter is a declared choice and the listed parameters/tabs exist.
 - **A8 — "follow a line" = guide object**: a plain two-anchor straight line in the selection is
   the direction guide for `smooth flow` (and passes through unchanged); anything else is
   smoothed. Chosen over a numeric angle parameter so users point at the line they drew.
@@ -85,12 +89,18 @@ function ("tabs").
   `snap handles`/`smooth flow` under the same rule; `merge anchors` uses only explicitly
   direct-selected anchors. When a direct selection restricted the search and nothing crossed,
   the decline message says so (UX feedback).
-- `smooth flow`: per anchor, tangent = normalised `next − prev` (Catmull-Rom; one-sided at open
-  ends), handles placed on the tangent at ⅓ of the chord to each neighbour, anchor positions
-  unchanged → G1 continuity. `flow` (0–100 %) lerps original → smoothed handles. A plain
-  two-anchor straight line among the parsed objects (when more than one object is selected) is
-  the *guide*: tangents become the guide's direction (sign-matched by dot product with the
-  Catmull-Rom tangent), and the guide passes through untouched.
+- `smooth flow` (reworked in round 3 — "too weak, kinks at lines" feedback): per anchor, tangent
+  = normalised `next − prev` (Catmull-Rom; one-sided at open ends), handles placed on the tangent
+  at **0.390524 of the chord** to each neighbour (a circular arc's cubic handle over its chord —
+  fuller than ⅓, optically smooth), anchor positions unchanged → G1 continuity. In a subpath
+  mixing lines and curves, **straight (handle-less) segments are preserved**: no handles are
+  pushed into them, a line–curve junction anchor takes the line's own direction as its tangent
+  (any orientation) so the curve merges with the line, and a line–line corner stays a corner. A
+  subpath with no handles at all is a polyline being smoothed, so there everything participates.
+  `flow` (0–100 %) lerps original → smoothed handles. A plain two-anchor straight line among the
+  parsed objects (when more than one object is selected) is the *guide*: tangents become the
+  guide's direction (sign-matched by dot product with the Catmull-Rom tangent), and the guide
+  passes through untouched; a local straight-segment junction wins over the guide.
 - `merge anchors`: group direct-selected anchors; per subpath, runs of consecutive selected
   anchors (with cyclic wrap on closed subpaths) collapse into one anchor, lone selected anchors
   move; all survivors land on the shared *target*: centroid (`average`, `dominant direction`) or
@@ -112,6 +122,10 @@ function ("tabs").
 - [x] README (install, per-mode "tab" sections, method, limitations)
 - [x] Round 2: host `selectedAnchors`/`selectedSegments` input extension (+ engine test,
       `docs/plugins.md`), selection-aware insert/mark/snap, `smooth flow`, `merge anchors`
+- [x] Round 3: host manifest `tabs` extension — real tab row, per-tab description, per-tab
+      parameters — in the plug-in dialog (manifest validation, `schema_fields`, UI test,
+      `docs/plugins.md`); `smooth flow` rework —
+      straight segments preserved, line–curve junctions merge with the line, 0.39-chord handles
 
 ## 5. Possible follow-ups (for the next agent/developer)
 

@@ -147,7 +147,10 @@ fn body(app: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) -> bool {
     }
     // Plug-in effects get fields from their parameter schema; colour adjustments their sliders.
     let changed = match vectorcraft_plugins::effect::installed(&id) {
-        Some(plugin) => form::schema_fields(ui, d, &plugin.manifest().params),
+        Some(plugin) => {
+            let m = plugin.manifest();
+            form::schema_fields(ui, d, &m.params, m.tabs.as_ref())
+        }
         None if vectorcraft_effects::is_adjustment(&id) => adjust_fields(ui, d),
         None if id == GLASS => glass_fields(app, ui, d),
         None if id == TRANSFORM => transform_fields(ui, d, app.session.general_unit()),

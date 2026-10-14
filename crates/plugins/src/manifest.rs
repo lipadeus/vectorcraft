@@ -78,6 +78,22 @@ impl ParamSpec {
     }
 }
 
+/// An optional tab layout for the generated dialog: `param` names a `choice` parameter rendered
+/// as a row of tabs, and `params` lists, per other parameter, the tab values it belongs to
+/// (a parameter not listed shows on every tab).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Tabs {
+    /// The `choice` parameter whose options are the tabs.
+    pub param: String,
+    /// Parameter name → the `param` options (tabs) it is shown on.
+    #[serde(default)]
+    pub params: std::collections::BTreeMap<String, Vec<String>>,
+    /// Tab (a `param` option) → a description shown under the tab row, above its parameters.
+    #[serde(default)]
+    pub descriptions: std::collections::BTreeMap<String, String>,
+}
+
 /// The manifest a plug-in returns from `vc_manifest` (UTF-8 JSON).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -96,6 +112,9 @@ pub struct Manifest {
     /// Parameters in declaration (dialog) order; a JSON object `{"name": spec, …}` in the manifest.
     #[serde(default, deserialize_with = "ordered_params", serialize_with = "params_as_object")]
     pub params: Vec<(String, ParamSpec)>,
+    /// Optional dialog tabs over a `choice` parameter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tabs: Option<Tabs>,
 }
 
 impl Manifest {
@@ -120,6 +139,7 @@ impl Manifest {
             description: String::new(),
             author: String::new(),
             params: Vec::new(),
+            tabs: None,
         }
     }
 
@@ -155,6 +175,28 @@ impl Manifest {
                     }
                 }
                 _ => {}
+            }
+        }
+        if let Some(tabs) = &self.tabs {
+            let options = match self.params.iter().find(|(k, _)| *k == tabs.param).map(|(_, s)| s) {
+                Some(ParamSpec::Choice { options, .. }) => options,
+                _ => return Err(Error::Manifest(format!("`tabs.param` must name a declared choice parameter, not {:?}", tabs.param))),
+            };
+            for (k, shown_on) in &tabs.params {
+                if *k == tabs.param || !self.params.iter().any(|(name, _)| name == k) {
+                    return Err(Error::Manifest(format!("`tabs.params` names an unknown parameter {k:?}")));
+                }
+                if let Some(o) = shown_on.iter().find(|o| !options.contains(o)) {
+                    return Err(Error::Manifest(format!("`tabs.params.{k}` names an unknown tab {o:?}")));
+                }
+            }
+            for (tab, text) in &tabs.descriptions {
+                if !options.contains(tab) {
+                    return Err(Error::Manifest(format!("`tabs.descriptions` names an unknown tab {tab:?}")));
+                }
+                if text.len() > 1024 {
+                    return Err(Error::Manifest(format!("`tabs.descriptions.{tab}` is too long")));
+                }
             }
         }
         Ok(())
@@ -377,5 +419,36 @@ mod tests {
         }
         assert!(Manifest::parse(&[0xff, 0xfe]).is_err());
         assert!(Manifest::parse(&vec![b' '; MAX_MANIFEST_BYTES + 1]).is_err());
+    }
+
+    #[test]
+    fn tabs_validate_against_the_declared_parameters() {
+        let with_tabs = |tabs: &str| {
+            format!(
+                r#"{{"id":"a","name":"x","kind":"filter","params":{{
+                    "mode":{{"type":"choice","options":["one","two"]}},
+                    "amount":{{"type":"number","min":0,"max":1,"default":0}}}},"tabs":{tabs}}}"#
+            )
+        };
+        let m = Manifest::parse(
+            with_tabs(r#"{"param":"mode","params":{"amount":["two"]},"descriptions":{"one":"The first.","two":"The second."}}"#).as_bytes(),
+        )
+        .unwrap();
+        let tabs = m.tabs.unwrap();
+        assert_eq!(tabs.param, "mode");
+        assert_eq!(tabs.params["amount"], ["two"]);
+        assert_eq!(tabs.descriptions["one"], "The first.");
+        for bad in [
+            r#"{"param":"nope"}"#,                               // not a declared parameter
+            r#"{"param":"amount"}"#,                             // not a choice
+            r#"{"param":"mode","params":{"nope":["one"]}}"#,     // unknown parameter listed
+            r#"{"param":"mode","params":{"mode":["one"]}}"#,     // the tab parameter itself
+            r#"{"param":"mode","params":{"amount":["three"]}}"#, // unknown tab
+            r#"{"param":"mode","descriptions":{"three":"x"}}"#,  // description of an unknown tab
+        ] {
+            assert!(Manifest::parse(with_tabs(bad).as_bytes()).is_err(), "{bad}");
+        }
+        // Without tabs, nothing changes.
+        assert!(Manifest::parse(FULL.as_bytes()).unwrap().tabs.is_none());
     }
 }

@@ -93,11 +93,14 @@ fn body(app: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) -> bool {
     // A plug-in uninstalled while its dialog is open closes it.
     let Some(plugin) = registry::get(&d.str("__plugin")) else { return true };
     let m = plugin.manifest();
-    if !m.description.is_empty() {
+    // With per-tab descriptions, the active tab's text (shown by schema_fields) replaces the
+    // overall description.
+    let per_tab = m.tabs.as_ref().is_some_and(|t| !t.descriptions.is_empty());
+    if !m.description.is_empty() && !per_tab {
         ui.label(egui::RichText::new(&m.description).color(crate::theme::Tokens::get(ui.ctx()).text_dim));
         ui.add_space(8.0);
     }
-    form::schema_fields(ui, d, &m.params);
+    form::schema_fields(ui, d, &m.params, m.tabs.as_ref());
     let (label, p) = (d.str("__label"), params(d));
     form::preview(app, ui, d, &label, CMD, p);
     false
