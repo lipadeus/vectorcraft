@@ -150,6 +150,10 @@ object, holding only geometry (`type`, `path`, `fillRule`, `bounds`).
   c, m, y, k}`, `{"model": "gray", k}` (ink: 0 white, 1 black) or `{"model": "lab", l, a, b}`; components 0–1 except
   Lab's.
 - `bounds`: `[x0, y0, x1, y1]`, the geometric bounds (read only).
+- `selectedAnchors`, `selectedSegments` (filters only): when the user direct-selected parts of the object, the
+  selected anchors and segments as sorted `[subpath, index]` pairs (a segment's index is its starting anchor's).
+  Absent when the whole object is selected. Plug-ins that don't know these keys are unaffected; those that do can
+  honour the user's exact selection.
 
 ### Parameters
 

@@ -1,22 +1,33 @@
 //! Intersection Anchors: a VectorCraft object filter plug-in (plug-in ABI v1, see
 //! `docs/plugins.md`).
 //!
-//! Three modes on the selected paths and compound paths:
+//! Five modes on the selected paths and compound paths:
 //!
 //! - **insert**: finds every point where two segments (lines or Bézier curves) cross — between
 //!   objects, between subpaths and within one subpath — and inserts an anchor point exactly there,
-//!   splitting each crossing segment with de Casteljau so the shapes don't change.
+//!   splitting each crossing segment with de Casteljau so the shapes don't change. With a direct
+//!   selection (anchors or segments picked with the Direct Selection tool), only the picked parts
+//!   take part, so crossings appear exactly where the user chose to work.
 //! - **mark**: adds a small magenta marker on top of each crossing instead of editing the paths,
 //!   so the crossings are easy to see (and, with the dialog's live preview, easy to see *before*
-//!   committing). Undo removes the markers in one step.
-//! - **snap handles**: rotates every Bézier handle of the selection onto the nearest multiple of
-//!   `angle` degrees (45° by default), keeping its length; smooth anchors stay smooth. The
-//!   interactive equivalent — holding Shift while dragging a handle — is built into the app's
-//!   Direct Selection, Anchor Point and Pen tools, which constrain to 45° steps natively.
+//!   committing). It honours the same direct selection as **insert**, so it also answers "which
+//!   crossings will be used?". Undo removes the markers in one step.
+//! - **snap handles**: rotates every Bézier handle of the selection (or of the direct-selected
+//!   anchors) onto the nearest multiple of `angle` degrees (45° by default), keeping its length;
+//!   smooth anchors stay smooth. The interactive equivalent — holding Shift while dragging a
+//!   handle — is built into the app's Direct Selection, Anchor Point and Pen tools.
+//! - **smooth flow**: recomputes the targeted anchors' handles for tangent continuity (G1), so a
+//!   chain of Bézier segments flows evenly instead of looking distorted by its old handles; when
+//!   the selection also holds a straight line, the curve's tangents follow that line's direction.
+//! - **merge anchors**: collapses runs of direct-selected anchors into one anchor and moves every
+//!   selected anchor to a common point — its position and handles computed per the `merge` method
+//!   (average, geometric centre, or dominant curve direction).
 //!
 //! Intersections are found by recursive subdivision: each pair of segments is split in half until
 //! both halves are flat enough to be treated as lines, whose crossing gives the curve parameters.
 //! Crossings that coincide with an existing anchor are skipped, and coincident hits are merged.
+//! The host passes the user's direct selection per object as `selectedAnchors` /
+//! `selectedSegments`; an object without them is selected whole.
 //! Only `serde_json` is used: no imports, no WASI.
 
 use serde_json::{Map, Value, json};
@@ -24,14 +35,16 @@ use serde_json::{Map, Value, json};
 const MANIFEST: &str = r#"{
   "id": "org.vectorcraft.intersect",
   "name": "Intersection Anchors",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "kind": "filter",
   "author": "VectorCraft contributors",
-  "description": "Inserts anchor points where the selected paths cross, marks the crossings, or snaps Bezier handles to angle steps.",
+  "description": "Anchor points at path crossings (insert or mark, honouring direct-selected anchors), handle angle snapping, tangent-continuous smoothing along a line, and merging of selected anchor points.",
   "params": {
-    "mode": {"type": "choice", "options": ["insert", "mark", "snap handles"], "default": "insert"},
+    "mode": {"type": "choice", "options": ["insert", "mark", "snap handles", "smooth flow", "merge anchors"], "default": "insert"},
     "marker": {"type": "number", "min": 1, "max": 50, "default": 5},
-    "angle": {"type": "int", "min": 1, "max": 180, "default": 45}
+    "angle": {"type": "int", "min": 1, "max": 180, "default": 45},
+    "flow": {"type": "number", "min": 0, "max": 100, "default": 100},
+    "merge": {"type": "choice", "options": ["average", "geometric center", "dominant direction"], "default": "average"}
   }
 }"#;
 
@@ -82,13 +95,21 @@ pub fn run(doc: &Value, params: &Value) -> Value {
     let Some(objects) = doc["objects"].as_array().filter(|o| !o.is_empty()) else {
         return json!({"error": "Select some paths."});
     };
-    let mode = params["mode"].as_str().unwrap_or("insert");
-    if mode == "snap handles" {
-        let step = params["angle"].as_f64().unwrap_or(45.0).clamp(1.0, 180.0);
-        return snap_handles(objects, step);
+    match params["mode"].as_str().unwrap_or("insert") {
+        "snap handles" => {
+            let step = params["angle"].as_f64().unwrap_or(45.0).clamp(1.0, 180.0);
+            snap_handles(objects, step)
+        }
+        "smooth flow" => {
+            let flow = params["flow"].as_f64().unwrap_or(100.0).clamp(0.0, 100.0) / 100.0;
+            smooth_flow(objects, flow)
+        }
+        "merge anchors" => merge_anchors(objects, params["merge"].as_str().unwrap_or("average")),
+        mode => {
+            let marker = params["marker"].as_f64().unwrap_or(5.0).clamp(1.0, 50.0);
+            intersections(objects, mode, marker)
+        }
     }
-    let marker = params["marker"].as_f64().unwrap_or(5.0).clamp(1.0, 50.0);
-    intersections(objects, mode, marker)
 }
 
 // --- Geometry ------------------------------------------------------------------------------
@@ -204,15 +225,47 @@ struct SubPath {
     anchors: Vec<Anchor>,
 }
 
-/// One selected object's parsed subpaths, with its index into `objects`.
+/// One selected object's parsed subpaths, with its index into `objects` and, when the user
+/// direct-selected parts of it, those parts (`None`: the object is selected whole).
 struct Obj {
     index: usize,
     subs: Vec<SubPath>,
+    sel_anchors: Option<Vec<(usize, usize)>>,
+    sel_segments: Option<Vec<(usize, usize)>>,
+}
+
+impl Obj {
+    /// Does segment (`si`, `ai`) of a subpath of `n` anchors take part? A whole-object selection
+    /// takes every segment; a direct selection takes the segments picked explicitly and the ones
+    /// touching a selected anchor.
+    fn seg_selected(&self, si: usize, ai: usize, n: usize) -> bool {
+        let (sa, ss) = (self.sel_anchors.as_deref(), self.sel_segments.as_deref());
+        if sa.is_none() && ss.is_none() {
+            return true;
+        }
+        ss.is_some_and(|s| s.contains(&(si, ai))) || sa.is_some_and(|s| s.contains(&(si, ai)) || (n > 0 && s.contains(&(si, (ai + 1) % n))))
+    }
+
+    /// Is anchor (`si`, `ai`) one the user asked to work on? Without a direct selection, all are.
+    fn anchor_selected(&self, si: usize, ai: usize) -> bool {
+        self.sel_anchors.as_deref().is_none_or(|s| s.contains(&(si, ai)))
+    }
 }
 
 fn point(v: &Value) -> Option<P> {
     let (x, y) = (v.get(0)?.as_f64()?, v.get(1)?.as_f64()?);
     (x.is_finite() && y.is_finite()).then_some([x, y])
+}
+
+/// `selectedAnchors` / `selectedSegments` on an input object: `[[subpath, index], …]`.
+fn sel_refs(v: &Value) -> Option<Vec<(usize, usize)>> {
+    let list = v.as_array()?;
+    let mut out = Vec::new();
+    for r in list {
+        let (si, ai) = (r.get(0)?.as_u64()?, r.get(1)?.as_u64()?);
+        out.push((si as usize, ai as usize));
+    }
+    Some(out)
 }
 
 /// The objects whose paths parse; ones that don't are passed through untouched.
@@ -232,7 +285,7 @@ fn parse(objects: &[Value]) -> Vec<Obj> {
             true
         });
         if ok {
-            out.push(Obj { index, subs: parsed });
+            out.push(Obj { index, subs: parsed, sel_anchors: sel_refs(&o["selectedAnchors"]), sel_segments: sel_refs(&o["selectedSegments"]) });
         }
     }
     out
@@ -241,7 +294,8 @@ fn parse(objects: &[Value]) -> Vec<Obj> {
 /// A segment's address: object (index into the parsed list), subpath, first anchor.
 type SegId = (usize, usize, usize);
 
-/// Every segment of every parsed object, as a degenerate-aware cubic.
+/// Every participating segment of every parsed object, as a degenerate-aware cubic. With a
+/// direct selection, only the segments the user picked (or whose anchors they picked) join in.
 fn segments(objs: &[Obj]) -> Vec<(SegId, Cubic)> {
     let mut out = Vec::new();
     for (oi, o) in objs.iter().enumerate() {
@@ -249,6 +303,9 @@ fn segments(objs: &[Obj]) -> Vec<(SegId, Cubic)> {
             let n = s.anchors.len();
             let count = if s.closed && n > 1 { n } else { n.saturating_sub(1) };
             for ai in 0..count {
+                if !o.seg_selected(si, ai, n) {
+                    continue;
+                }
                 let (a, b) = (&s.anchors[ai], &s.anchors[(ai + 1) % n]);
                 let c = Cubic { p: [a.p, a.outh.unwrap_or(a.p), b.inh.unwrap_or(b.p), b.p] };
                 if dist(a.p, b.p) > 0.0 || a.outh.is_some() || b.inh.is_some() {
@@ -295,7 +352,11 @@ fn intersections(objects: &[Value], mode: &str, marker: f64) -> Value {
         }
     }
     if points.is_empty() {
-        return json!({"error": "No crossings found in the selection."});
+        return if objs.iter().any(|o| o.sel_anchors.is_some() || o.sel_segments.is_some()) {
+            json!({"error": "No crossings among the direct-selected anchors or segments. Select the parts that cross, or select whole objects."})
+        } else {
+            json!({"error": "No crossings found in the selection."})
+        };
     }
     let mut out: Vec<Value> = Vec::new();
     if mode == "mark" {
@@ -429,8 +490,9 @@ fn marker_circle(c: P, r: f64) -> Value {
     })
 }
 
-/// Rotates every handle of the selection onto its nearest `step`-degree angle, keeping lengths;
-/// a smooth anchor's two handles stay collinear (the longer one leads).
+/// Rotates every handle of the selection — or, with a direct selection, only the selected
+/// anchors' handles — onto its nearest `step`-degree angle, keeping lengths; a smooth anchor's
+/// two handles stay collinear (the longer one leads).
 fn snap_handles(objects: &[Value], step: f64) -> Value {
     let objs = parse(objects);
     if objs.is_empty() {
@@ -442,12 +504,17 @@ fn snap_handles(objects: &[Value], step: f64) -> Value {
         let subs: Vec<Value> = o
             .subs
             .iter()
-            .map(|s| {
+            .enumerate()
+            .map(|(si, s)| {
                 let anchors: Vec<Value> = s
                     .anchors
                     .iter()
-                    .map(|a| {
+                    .enumerate()
+                    .map(|(ai, a)| {
                         let mut raw = a.raw.clone();
+                        if !o.anchor_selected(si, ai) {
+                            return Value::Object(raw);
+                        }
                         let smooth = raw.get("kind").and_then(Value::as_str) == Some("Smooth") && a.inh.is_some() && a.outh.is_some();
                         if smooth {
                             // Snap the longer handle's angle; the other mirrors it.
@@ -486,6 +553,276 @@ fn snap_handles(objects: &[Value], step: f64) -> Value {
         }
     }
     json!({"objects": out})
+}
+
+/// Smooths the targeted anchors' handles for tangent continuity (G1): each anchor's tangent
+/// comes from its neighbours (Catmull-Rom style), handle lengths from a third of each chord, so
+/// several Bézier segments flow evenly instead of fighting each other's old handles. If the
+/// selection also holds a straight guide line (an object made only of handle-less segments) and
+/// at least one other path, the tangents turn onto the line's direction, so the curve follows the
+/// line evenly. `flow` (0–1) blends from the current handles to the smoothed ones. With a direct
+/// selection, only the selected anchors change.
+fn smooth_flow(objects: &[Value], flow: f64) -> Value {
+    let objs = parse(objects);
+    if objs.is_empty() {
+        return json!({"error": "Select some paths."});
+    }
+    // A guide: the first plain line (one open two-anchor handle-less subpath), used only when
+    // something else is selected too.
+    let straight = |o: &Obj| {
+        o.subs.len() == 1
+            && o.subs.first().is_some_and(|s| !s.closed && s.anchors.len() == 2 && s.anchors.iter().all(|a| a.inh.is_none() && a.outh.is_none()))
+    };
+    let guide_at = (objs.len() > 1).then(|| objs.iter().position(straight)).flatten();
+    let guide_dir: Option<P> = guide_at.and_then(|gi| {
+        let s = objs.get(gi)?.subs.first()?;
+        let (a, b) = (s.anchors.first()?, s.anchors.get(1)?);
+        let (ux, uy) = unit(sub(b.p, a.p));
+        (ux != 0.0 || uy != 0.0).then_some([ux, uy])
+    });
+    let mut out: Vec<Value> = Vec::new();
+    let parsed: Vec<usize> = objs.iter().map(|o| o.index).collect();
+    for (oi, o) in objs.iter().enumerate() {
+        if Some(oi) == guide_at {
+            out.push(json!({"id": objects[o.index]["id"]}));
+            continue;
+        }
+        let subs: Vec<Value> = o
+            .subs
+            .iter()
+            .enumerate()
+            .map(|(si, s)| {
+                let n = s.anchors.len();
+                let anchors: Vec<Value> = s
+                    .anchors
+                    .iter()
+                    .enumerate()
+                    .map(|(ai, a)| {
+                        let mut raw = a.raw.clone();
+                        if n < 2 || !o.anchor_selected(si, ai) {
+                            return Value::Object(raw);
+                        }
+                        let prev = if ai > 0 {
+                            Some(s.anchors[ai - 1].p)
+                        } else if s.closed {
+                            Some(s.anchors[n - 1].p)
+                        } else {
+                            None
+                        };
+                        let next = if ai + 1 < n {
+                            Some(s.anchors[ai + 1].p)
+                        } else if s.closed {
+                            Some(s.anchors[0].p)
+                        } else {
+                            None
+                        };
+                        // The tangent through this anchor: its neighbours' chord, or one-sided.
+                        let t = match (prev, next) {
+                            (Some(q), Some(r)) => sub(r, q),
+                            (Some(q), None) => sub(a.p, q),
+                            (None, Some(r)) => sub(r, a.p),
+                            (None, None) => return Value::Object(raw),
+                        };
+                        let (mut ux, mut uy) = unit(t);
+                        if let Some(d) = guide_dir {
+                            // Follow the guide line: its direction, signed to match the flow.
+                            let s = if ux * d[0] + uy * d[1] < 0.0 { -1.0 } else { 1.0 };
+                            (ux, uy) = (d[0] * s, d[1] * s);
+                        }
+                        if ux == 0.0 && uy == 0.0 {
+                            return Value::Object(raw);
+                        }
+                        if let Some(q) = prev {
+                            let len = dist(a.p, q) / 3.0;
+                            let target = [a.p[0] - ux * len, a.p[1] - uy * len];
+                            set_handle(&mut raw, "in", lerp(a.inh.unwrap_or(a.p), target, flow), a.p);
+                        }
+                        if let Some(r) = next {
+                            let len = dist(r, a.p) / 3.0;
+                            let target = [a.p[0] + ux * len, a.p[1] + uy * len];
+                            set_handle(&mut raw, "out", lerp(a.outh.unwrap_or(a.p), target, flow), a.p);
+                        }
+                        if raw.contains_key("in") && raw.contains_key("out") {
+                            raw.insert("kind".into(), json!("Smooth"));
+                        }
+                        Value::Object(raw)
+                    })
+                    .collect();
+                json!({"closed": s.closed, "anchors": anchors})
+            })
+            .collect();
+        out.push(json!({"id": objects[o.index]["id"], "path": {"subpaths": subs}}));
+    }
+    for (i, obj) in objects.iter().enumerate() {
+        if !parsed.contains(&i) {
+            out.push(json!({"id": obj["id"]}));
+        }
+    }
+    json!({"objects": out})
+}
+
+/// Merges the direct-selected anchor points: consecutive selected anchors of one subpath collapse
+/// into a single anchor, and every merged or lone selected anchor moves to one common point, so
+/// anchors across subpaths and objects end up together. The point and the handles come from
+/// `method`: `average` (centroid; handles the mean of the merged handle vectors), `geometric
+/// center` (bounding-box centre; same handles) or `dominant direction` (centroid; handles turned
+/// collinear with the longest selected handle, a smooth point). The surviving anchor keeps the
+/// first member's tie to the segment before it and the last member's to the one after.
+fn merge_anchors(objects: &[Value], method: &str) -> Value {
+    let objs = parse(objects);
+    let picked: Vec<(usize, usize, usize)> = objs
+        .iter()
+        .enumerate()
+        .flat_map(|(oi, o)| {
+            o.sel_anchors
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .filter(|(si, ai)| o.subs.get(*si).is_some_and(|s| *ai < s.anchors.len()))
+                .map(move |&(si, ai)| (oi, si, ai))
+        })
+        .collect();
+    if picked.len() < 2 {
+        return json!({"error": "Direct-select two or more anchor points (Direct Selection tool), then run the merge."});
+    }
+    let pts: Vec<P> = picked.iter().map(|&(oi, si, ai)| objs[oi].subs[si].anchors[ai].p).collect();
+    let target = match method {
+        "geometric center" => {
+            let (mut lo, mut hi) = (pts[0], pts[0]);
+            for p in &pts {
+                lo = [lo[0].min(p[0]), lo[1].min(p[1])];
+                hi = [hi[0].max(p[0]), hi[1].max(p[1])];
+            }
+            [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0]
+        }
+        _ => {
+            let sum = pts.iter().fold([0.0, 0.0], |s, p| [s[0] + p[0], s[1] + p[1]]);
+            [sum[0] / pts.len() as f64, sum[1] / pts.len() as f64]
+        }
+    };
+    // The dominant direction: the longest handle among the selected anchors.
+    let dominant: Option<P> = picked
+        .iter()
+        .flat_map(|&(oi, si, ai)| {
+            let a = &objs[oi].subs[si].anchors[ai];
+            [a.outh.map(|h| sub(h, a.p)), a.inh.map(|h| sub(a.p, h))]
+        })
+        .flatten()
+        .max_by(|a, b| {
+            let (la, lb) = (a[0] * a[0] + a[1] * a[1], b[0] * b[0] + b[1] * b[1]);
+            la.partial_cmp(&lb).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|v| {
+            let (x, y) = unit(v);
+            [x, y]
+        });
+    let mut out: Vec<Value> = Vec::new();
+    let parsed: Vec<usize> = objs.iter().map(|o| o.index).collect();
+    for (oi, o) in objs.iter().enumerate() {
+        if o.sel_anchors.as_deref().is_none_or(|s| s.is_empty()) {
+            out.push(json!({"id": objects[o.index]["id"]}));
+            continue;
+        }
+        let subs: Vec<Value> = o
+            .subs
+            .iter()
+            .enumerate()
+            .map(|(si, s)| {
+                let anchors = merge_in_subpath(s, |ai| picked.contains(&(oi, si, ai)), target, method, dominant);
+                json!({"closed": s.closed, "anchors": anchors})
+            })
+            .collect();
+        out.push(json!({"id": objects[o.index]["id"], "path": {"subpaths": subs}}));
+    }
+    for (i, obj) in objects.iter().enumerate() {
+        if !parsed.contains(&i) {
+            out.push(json!({"id": obj["id"]}));
+        }
+    }
+    json!({"objects": out})
+}
+
+/// The subpath's anchors with each run of consecutive selected anchors merged into one anchor at
+/// `target` (runs wrap round a closed subpath). Returns the new anchor list as JSON.
+fn merge_in_subpath(s: &SubPath, selected: impl Fn(usize) -> bool, target: P, method: &str, dominant: Option<P>) -> Vec<Value> {
+    let n = s.anchors.len();
+    let sel: Vec<bool> = (0..n).map(&selected).collect();
+    // Each anchor's run id, runs numbered by their first member in walking order; wrapped runs of
+    // a closed subpath take the id of their start near the end.
+    let mut run = vec![usize::MAX; n];
+    let mut runs: Vec<Vec<usize>> = Vec::new();
+    let all = sel.iter().all(|&b| b);
+    if all && n > 0 {
+        runs.push((0..n).collect());
+        run.iter_mut().for_each(|r| *r = 0);
+    } else {
+        for start in 0..n {
+            let before = if s.closed { sel[(start + n - 1) % n] } else { start > 0 && sel[start - 1] };
+            if !sel[start] || before {
+                continue;
+            }
+            let mut members = Vec::new();
+            let mut i = start;
+            while sel[i] && members.len() < n {
+                members.push(i);
+                run[i] = runs.len();
+                i = (i + 1) % n;
+                if !s.closed && i == 0 {
+                    break;
+                }
+            }
+            runs.push(members);
+        }
+    }
+    let mut out = Vec::new();
+    let mut emitted = vec![false; runs.len()];
+    for (ai, &r) in run.iter().enumerate().take(n) {
+        if r == usize::MAX {
+            out.push(Value::Object(s.anchors[ai].raw.clone()));
+            continue;
+        }
+        if emitted[r] {
+            continue;
+        }
+        emitted[r] = true;
+        out.push(merged_anchor(s, &runs[r], target, method, dominant));
+    }
+    out
+}
+
+/// One anchor standing in for the run `members` (subpath anchor indices, in path order), at
+/// `target`, its handles per `method`.
+fn merged_anchor(s: &SubPath, members: &[usize], target: P, method: &str, dominant: Option<P>) -> Value {
+    let hvec = |get: fn(&Anchor) -> Option<P>| -> Option<P> {
+        // The mean of the members' handle vectors (relative to their anchors).
+        let vs: Vec<P> = members.iter().filter_map(|&i| get(&s.anchors[i]).map(|h| sub(h, s.anchors[i].p))).collect();
+        (!vs.is_empty()).then(|| {
+            let sum = vs.iter().fold([0.0, 0.0], |a, v| [a[0] + v[0], a[1] + v[1]]);
+            [sum[0] / vs.len() as f64, sum[1] / vs.len() as f64]
+        })
+    };
+    // Keep the tie to the neighbouring segments: in from the first member, out from the last; the
+    // averaging methods mean over the run instead.
+    let (first, last) = (&s.anchors[members[0]], &s.anchors[members[members.len() - 1]]);
+    let (mut inv, mut outv) = if method == "dominant direction" || members.len() == 1 {
+        (first.inh.map(|h| sub(h, first.p)), last.outh.map(|h| sub(h, last.p)))
+    } else {
+        (hvec(|a| a.inh), hvec(|a| a.outh))
+    };
+    if method == "dominant direction"
+        && let Some(d) = dominant
+    {
+        inv = inv.map(|v| {
+            let len = (v[0] * v[0] + v[1] * v[1]).sqrt();
+            [-d[0] * len, -d[1] * len]
+        });
+        outv = outv.map(|v| {
+            let len = (v[0] * v[0] + v[1] * v[1]).sqrt();
+            [d[0] * len, d[1] * len]
+        });
+    }
+    let smooth = method == "dominant direction" && inv.is_some() && outv.is_some();
+    anchor_json(target, inv.map(|v| [target[0] + v[0], target[1] + v[1]]), outv.map(|v| [target[0] + v[0], target[1] + v[1]]), smooth)
 }
 
 /// `v` rotated onto the nearest multiple of `step` degrees, length kept — the same rule as the
@@ -629,5 +966,127 @@ mod tests {
         for (ta, tb) in hits {
             assert!(dist(a.eval(ta), b.eval(tb)) < 1e-2);
         }
+    }
+
+    /// A line with selected anchors, `|sel|` of them: `[[si, ai], …]` attached to the object.
+    fn with_sel(mut o: Value, sel: &[[u64; 2]]) -> Value {
+        o["selectedAnchors"] = json!(sel);
+        o
+    }
+
+    /// A direct selection limits `insert` to segments touching the selected anchors, with clear
+    /// feedback when the selected parts don't cross.
+    #[test]
+    fn insert_honours_the_direct_selection() {
+        // A zigzag whose first segment crosses the line; only its far anchors are selected, so
+        // nothing participates for it and no crossing is found.
+        let zig = json!({"id": 1, "type": "path", "path": {"subpaths": [{"closed": false, "anchors": [
+            {"p": [0.0, 0.0]}, {"p": [100.0, 100.0]}, {"p": [200.0, 0.0]}]}]}});
+        let cross = line(2, [0.0, 100.0], [100.0, 0.0]);
+        let doc = json!({"objects": [with_sel(zig.clone(), &[[0, 2]]), cross.clone()]});
+        let out = run(&doc, &json!({"mode": "insert"}));
+        assert!(out["error"].as_str().unwrap_or("").contains("direct-selected"), "{out}");
+        // Selecting an anchor of the crossing segment brings it back in.
+        let doc = json!({"objects": [with_sel(zig, &[[0, 0]]), cross]});
+        let out = run(&doc, &json!({"mode": "insert"}));
+        assert_eq!(anchors(&out, 0, 0).len(), 4, "{out}");
+        assert_eq!(anchors(&out, 1, 0).len(), 3);
+    }
+
+    /// `snap handles` with a direct selection leaves unselected anchors' handles alone.
+    #[test]
+    fn snap_handles_honours_the_direct_selection() {
+        let doc = json!({"objects": [{"id": 4, "selectedAnchors": [[0, 0]], "type": "path", "path": {"subpaths": [{"closed": false, "anchors": [
+            {"p": [0.0, 0.0], "out": [10.0, 1.0]},
+            {"p": [100.0, 0.0], "in": [90.0, 2.0]},
+            {"p": [200.0, 0.0]}]}]}}]});
+        let out = run(&doc, &json!({"mode": "snap handles", "angle": 45}));
+        let a = anchors(&out, 0, 0);
+        assert!(a[0]["out"][1].as_f64().unwrap().abs() < 1e-9, "selected: snapped");
+        assert_eq!(a[1]["in"], json!([90.0, 2.0]), "unselected: untouched");
+    }
+
+    /// `smooth flow` gives a polyline tangent-continuous handles; with a straight line selected
+    /// too, the tangents follow the line's direction.
+    #[test]
+    fn smooth_flow_is_g1_and_follows_a_line() {
+        let zig = json!({"id": 1, "type": "path", "path": {"subpaths": [{"closed": false, "anchors": [
+            {"p": [0.0, 0.0]}, {"p": [100.0, 40.0]}, {"p": [200.0, 0.0]}, {"p": [300.0, 40.0]}]}]}});
+        let out = run(&json!({"objects": [zig.clone()]}), &json!({"mode": "smooth flow", "flow": 100}));
+        let a = anchors(&out, 0, 0);
+        // Inner anchors are smooth: in and out handles collinear through the anchor.
+        for i in [1, 2] {
+            assert_eq!(a[i]["kind"], json!("Smooth"), "{out}");
+            let p = [a[i]["p"][0].as_f64().unwrap(), a[i]["p"][1].as_f64().unwrap()];
+            let hi = [a[i]["in"][0].as_f64().unwrap() - p[0], a[i]["in"][1].as_f64().unwrap() - p[1]];
+            let ho = [a[i]["out"][0].as_f64().unwrap() - p[0], a[i]["out"][1].as_f64().unwrap() - p[1]];
+            assert!(cross(hi, ho).abs() < 1e-9 && hi[0] * ho[0] + hi[1] * ho[1] < 0.0, "G1 at {i}");
+        }
+        // With a horizontal guide line, every handle is horizontal and the guide is untouched.
+        let out = run(&json!({"objects": [zig, line(2, [0.0, 80.0], [300.0, 80.0])]}), &json!({"mode": "smooth flow", "flow": 100}));
+        let a = anchors(&out, 0, 0);
+        for a in a.iter().take(4) {
+            for key in ["in", "out"] {
+                if let Some(h) = a.get(key) {
+                    let dy = h[1].as_f64().unwrap() - a["p"][1].as_f64().unwrap();
+                    assert!(dy.abs() < 1e-9, "handle {key} follows the line: {out}");
+                }
+            }
+        }
+        assert_eq!(out["objects"][1], json!({"id": 2}), "the guide line is untouched");
+    }
+
+    /// `merge anchors` needs a direct selection of two or more anchors, collapses consecutive
+    /// selected anchors to the centroid and keeps the run's outer handles' ties.
+    #[test]
+    fn merge_anchors_average() {
+        let doc = json!({"objects": [line(1, [0.0, 0.0], [100.0, 100.0])]});
+        let out = run(&doc, &json!({"mode": "merge anchors"}));
+        assert!(out["error"].as_str().unwrap_or("").contains("Direct-select"), "{out}");
+        // Two inner anchors of a four-anchor path merge to their centroid.
+        let path = json!({"id": 1, "selectedAnchors": [[0, 1], [0, 2]], "type": "path", "path": {"subpaths": [{"closed": false, "anchors": [
+            {"p": [0.0, 0.0], "out": [10.0, 10.0]},
+            {"p": [100.0, 0.0], "in": [90.0, -10.0]},
+            {"p": [140.0, 20.0], "out": [160.0, 30.0]},
+            {"p": [300.0, 0.0]}]}]}});
+        let out = run(&json!({"objects": [path]}), &json!({"mode": "merge anchors", "merge": "average"}));
+        let a = anchors(&out, 0, 0);
+        assert_eq!(a.len(), 3, "{out}");
+        assert_eq!(a[1]["p"], json!([120.0, 10.0]));
+        // Mean handle vectors: in = mean([-10,-10]) rel 1 member with in; out = mean([20,10]).
+        assert_eq!(a[1]["in"], json!([110.0, 0.0]));
+        assert_eq!(a[1]["out"], json!([140.0, 20.0]));
+        assert_eq!(a[0]["p"], json!([0.0, 0.0]), "unselected anchors stay");
+    }
+
+    /// Anchors across two objects move to one common point (geometric centre), merging the gap.
+    #[test]
+    fn merge_anchors_across_objects_geometric_center() {
+        let a = with_sel(line(1, [0.0, 0.0], [100.0, 0.0]), &[[0, 1]]);
+        let b = with_sel(line(2, [120.0, 40.0], [200.0, 40.0]), &[[0, 0]]);
+        let out = run(&json!({"objects": [a, b]}), &json!({"mode": "merge anchors", "merge": "geometric center"}));
+        assert_eq!(anchors(&out, 0, 0)[1]["p"], json!([110.0, 20.0]), "{out}");
+        assert_eq!(anchors(&out, 1, 0)[0]["p"], json!([110.0, 20.0]));
+    }
+
+    /// `dominant direction` turns the merged point's handles collinear with the longest selected
+    /// handle, making it smooth.
+    #[test]
+    fn merge_anchors_dominant_direction() {
+        let path = json!({"id": 1, "selectedAnchors": [[0, 1], [0, 2]], "type": "path", "path": {"subpaths": [{"closed": false, "anchors": [
+            {"p": [0.0, 0.0]},
+            {"p": [100.0, 0.0], "in": [60.0, 0.0]},
+            {"p": [140.0, 20.0], "out": [150.0, 30.0]},
+            {"p": [300.0, 0.0]}]}]}});
+        let out = run(&json!({"objects": [path]}), &json!({"mode": "merge anchors", "merge": "dominant direction"}));
+        let a = anchors(&out, 0, 0);
+        assert_eq!(a.len(), 3, "{out}");
+        assert_eq!(a[1]["kind"], json!("Smooth"));
+        let p = [a[1]["p"][0].as_f64().unwrap(), a[1]["p"][1].as_f64().unwrap()];
+        let hi = [a[1]["in"][0].as_f64().unwrap() - p[0], a[1]["in"][1].as_f64().unwrap() - p[1]];
+        let ho = [a[1]["out"][0].as_f64().unwrap() - p[0], a[1]["out"][1].as_f64().unwrap() - p[1]];
+        // The dominant handle is the in handle of anchor 1 (length 40, along -x → direction +x).
+        assert!(cross(hi, ho).abs() < 1e-9 && hi[0] * ho[0] + hi[1] * ho[1] < 0.0, "collinear: {out}");
+        assert!((dist(hi, [0.0, 0.0]) - 40.0).abs() < 1e-9, "in length kept");
     }
 }

@@ -69,7 +69,7 @@ fn run(s: &mut Session, p: &Value) -> Result<Value> {
     let board = bounds.and_then(|b| st.doc.artboard_at(b.center())).and_then(|i| st.doc.artboards.get(i)).or(st.doc.artboards.first());
     let rect = |r: vectorcraft_geom::Rect| json!([r.x0, r.y0, r.x1, r.y1]);
     params["_context"] = json!({"mode": "filter", "bounds": bounds.map(rect), "artboard": board.map(|a| rect(a.rect))});
-    let input = objects::encode_input(&st.doc, &inputs);
+    let input = objects::encode_input_selected(&st.doc, &inputs, &st.selection.anchors, &st.selection.segments);
     let params = serde_json::to_vec(&params).map_err(|e| bad(C, e.to_string()))?;
     let out = objects::decode(&plugin.run(&input, &params).map_err(err)?).map_err(err)?;
     let ids = s.edit(m.name.trim_end_matches('…'), |d, sel| {

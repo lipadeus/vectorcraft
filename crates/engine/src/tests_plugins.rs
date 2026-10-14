@@ -213,6 +213,28 @@ fn plugin_management_commands() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// Direct-selected anchors and segments reach object filters as `selectedAnchors` /
+/// `selectedSegments` on their object; fully selected objects carry neither key.
+#[test]
+fn filter_input_carries_the_direct_selection() {
+    let mut s = session();
+    let a = rect(&mut s, 10.0, "#ff0000");
+    let b = rect(&mut s, 40.0, "#00ff00");
+    run(&mut s, "select.all", json!({}));
+    run(&mut s, "select.anchors", json!({"id": a.0, "anchors": [[0, 1], [0, 0]], "mode": "set"}));
+    let st = s.doc().unwrap();
+    let input = vectorcraft_plugins::objects::encode_input_selected(&st.doc, &[a, b], &st.selection.anchors, &st.selection.segments);
+    let v: Value = serde_json::from_slice(&input).unwrap();
+    let objs = v["objects"].as_array().unwrap();
+    assert_eq!(objs[0]["selectedAnchors"], json!([[0, 0], [0, 1]]));
+    assert!(objs[0].get("selectedSegments").is_none());
+    assert!(objs[1].get("selectedAnchors").is_none(), "b is selected whole");
+    // Without a direct selection the keys are absent entirely.
+    let plain = vectorcraft_plugins::objects::encode_input(&st.doc, &[a]);
+    let v: Value = serde_json::from_slice(&plain).unwrap();
+    assert!(v["objects"][0].get("selectedAnchors").is_none());
+}
+
 /// #2541: a plug-in installed in a session with a plug-in store is installed again in the next
 /// session that attaches the store, and Remove Plug-in takes it out of the store.
 #[test]
