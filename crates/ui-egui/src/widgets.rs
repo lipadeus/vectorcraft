@@ -89,13 +89,26 @@ fn flat_fill(ui: &Ui, rect: Rect, resp: &Response) {
 
 /// Blue call-to-action pill (dialog OK/Create).
 pub fn primary_button(ui: &mut Ui, text: &str) -> Response {
+    primary_button_enabled(ui, text, true)
+}
+
+/// [`primary_button`], greyed out and not clickable unless `enabled`.
+pub fn primary_button_enabled(ui: &mut Ui, text: &str, enabled: bool) -> Response {
     let t = Tokens::get(ui.ctx());
-    let galley = ui.painter().layout_no_wrap(tl!(text).to_string(), theme::semibold(12.5), Color32::WHITE);
+    let fg = if enabled { Color32::WHITE } else { t.text_disabled };
+    let galley = ui.painter().layout_no_wrap(tl!(text).to_string(), theme::semibold(12.5), fg);
     let w = galley.size().x + 32.0;
-    let (rect, resp) = ui.allocate_exact_size(vec2(w.max(72.0), 28.0), Sense::click());
-    let bg = if resp.hovered() { t.accent } else { t.accent_strong };
+    let (rect, resp) = ui.allocate_exact_size(vec2(w.max(72.0), 28.0), if enabled { Sense::click() } else { Sense::hover() });
+    let bg = match (enabled, resp.hovered()) {
+        (false, _) => t.input,
+        (true, true) => t.accent,
+        (true, false) => t.accent_strong,
+    };
     ui.painter().rect_filled(rect, CornerRadius::same(14), bg);
-    ui.painter().galley(rect.center() - galley.size() / 2.0, galley, Color32::WHITE);
+    if !enabled {
+        ui.painter().rect_stroke(rect, CornerRadius::same(14), egui::Stroke::new(1.0, t.button_border), egui::StrokeKind::Inside);
+    }
+    ui.painter().galley(rect.center() - galley.size() / 2.0, galley, fg);
     resp
 }
 
@@ -311,25 +324,43 @@ fn select_all(ui: &Ui, id: egui::Id, text: &str) {
 }
 
 /// Numeric fields select the whole text on keyboard focus, a completed focus click or a
-/// double-click. A pointer press keeps its caret so dragging selects from the pressed position.
+/// double-click. A pointer press keeps its caret so dragging selects from the pressed position,
+/// and a short drag the toolkit still counts as a click keeps it too (#1326): only a tap
+/// releases into select-all.
 fn select_all_on_focus(ui: &Ui, resp: &Response, text: &str) {
     let pending = resp.id.with("select-all-on-focus-click");
-    let (pressed, released) =
-        ui.input(|i| (i.pointer.button_pressed(egui::PointerButton::Primary), i.pointer.button_released(egui::PointerButton::Primary)));
+    let press_pos = resp.id.with("select-all-on-focus-press");
+    let (pressed, released, at_press) = ui.input(|i| {
+        (i.pointer.button_pressed(egui::PointerButton::Primary), i.pointer.button_released(egui::PointerButton::Primary), i.pointer.interact_pos())
+    });
     if resp.gained_focus() {
         ui.data_mut(|d| {
             if pressed {
                 d.insert_temp(pending, true);
+                if let Some(p) = at_press {
+                    d.insert_temp(press_pos, p);
+                }
             } else {
                 d.remove_temp::<bool>(pending);
+                d.remove_temp::<egui::Pos2>(press_pos);
             }
         });
     }
     let clicked_focus = released && ui.data_mut(|d| d.remove_temp::<bool>(pending)).unwrap_or(false) && resp.clicked_by(egui::PointerButton::Primary);
+    // A press released a few points away is a short drag, not a tap. egui still reports a
+    // click, and a release inside one character leaves no text selection, so select-all on
+    // release would replace the drag the user just made (#1326).
+    let dragged = clicked_focus
+        && ui
+            .data_mut(|d| d.remove_temp::<egui::Pos2>(press_pos))
+            .is_some_and(|p0| ui.input(|i| i.pointer.interact_pos()).is_some_and(|p1| (p1 - p0).length() > 3.0));
     if resp.lost_focus() {
-        ui.data_mut(|d| d.remove_temp::<bool>(pending));
+        ui.data_mut(|d| {
+            d.remove_temp::<bool>(pending);
+            d.remove_temp::<egui::Pos2>(press_pos);
+        });
     }
-    if !(resp.gained_focus() && !pressed || resp.double_clicked() || clicked_focus) {
+    if !(resp.gained_focus() && !pressed || resp.double_clicked() || clicked_focus && !dragged) {
         return;
     }
     if let Some(st) = egui::TextEdit::load_state(ui.ctx(), resp.id) {

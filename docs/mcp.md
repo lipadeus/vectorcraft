@@ -110,8 +110,9 @@ refused with `-32600` (requests) or ignored (notifications, which have no id to 
 to) before it is dispatched. When a tool call reaches a running app, it is one control-channel
 request, and the app echoes its `id` in the reply: a reply with any other `id` is rejected, the
 connection dropped, and the next call starts a fresh one — the call reports uncertainty like any
-reply that never arrived whole. The app's refusals carry no `id` (a connection past its 16, a line it
-would not read): the call reports the app's reason and says nothing was run. Before each call the
+reply that never arrived whole. A malformed JSON reply also drops the connection and reports that
+uncertainty; the failed operation is never replayed automatically. The app's refusals carry no `id`
+(a connection past its 16, a line it would not read): the call reports the app's reason and says nothing was run. Before each call the
 server checks that the app still holds the connection and opens a new one when it doesn't (the app
 closes a connection left idle for 5 minutes, and a restarted app is a new one), so a request is
 never written to a closed socket; when the app can't be reached, the call says that nothing was
@@ -594,7 +595,14 @@ imported instead and the first warning says why. Choosing a standard turns it of
 path (`document.save {path: "art.ai"}` or `{format: "ai"}`) writes a PDF-compatible file that always carries the
 document, takes the PDF options and keeps its path when reopened, so Save writes `.ai` again; a `.ait` opens untitled.
 `document.export` / `serialize` to `.ai` (and the CLI's `run --export x.ai` and `convert in.svg out.ai`) write the same file
-without giving the document a path.
+without giving the document a path. `options: {aiVersion: "7"}` writes legacy `.ai` files of version 7 instead (the
+PostScript form, which keeps layers, groups, compound paths and clipping groups in apps that read it), one per artboard
+of `range` (default all; `{name}-{artboard}.ai` when several, listed in the result's `files`), with
+`transparentImages: "flatten"` (default) or `"omit"` for images with see-through pixels, opacity or a blending mode,
+`hiddenObjects: "layer"` (default: a hidden layer of each layer's hidden objects), `"omit"` or `"visible"`, and
+`outlineText: true` to write type as outlines instead of text objects. From the CLI: `vectorcraft-cli convert in.svg
+out.ai --ai-version 7 [--hidden-objects layer|omit|visible] [--transparent-images flatten|omit] [--outline-text]
+[--range R]`.
 
 Drive a tool like a mouse:
 
@@ -1028,8 +1036,11 @@ Parameters: `angle` (degrees, 0..360, default 360), `offset` (points, 0..100000,
 `lightRotation` (degrees, -180..180, default 125.26; 0 on the object's right, counterclockwise), `lightHeight`
 (degrees, 0..90, default 30; 90 straight in front), `lightBehind` (default false), `lightSoftness` (0..100%,
 default 0), `ambient` (Ambient Light, 0..200%, default 25; an earlier `lightAzimuth` and `lightElevation` are read
-as the same light), and `expandVisibleOnly` (boolean, default true). A vertical-line profile needs a positive offset to have a radius.
-Open profiles have no end caps. Visibility of intersecting surfaces is approximate.
+as the same light), `cap` (boolean, default true), and `expandVisibleOnly` (boolean, default true). A vertical-line profile needs a positive offset to have a radius.
+`cap` closes each circular endpoint of an open profile with one curved, uniformly shaded
+vector path. Body faces share that curved rim. Partial sweeps use sectors and leave their angular
+cut sides open. Closed or coincident-end profiles are unchanged.
+Missing `cap` enables caps; set it to false for open endpoints. Shaded Revolve surfaces automatically interpolate curved-surface lighting with vector gradients while preserving profile corners and flat caps. There is no separate smoothing parameter. `shade: false` disables all lighting. Visibility of intersecting surfaces is approximate.
 The dialog's Lighting tab manipulates the same `lightRotation` and `lightHeight` parameters;
 its guide visibility and tab choice are UI state, excluded from saved effect parameters.
 `expandVisibleOnly` is saved with the effect. It trims covered portions of opaque solid surfaces only
@@ -1040,7 +1051,7 @@ See [Revolve](revolve.md) for the scope and limitations.
 
 ```json
 {"name":"run_command","arguments":{"command":"effect.apply","params":{"effect":"threeD.revolve","item":null,"params":{"angle":360,"offset":20,"edge":"left","rotationX":0,"rotationY":0,"rotationZ":0}}}}
-{"name":"run_command","arguments":{"command":"effect.setParams","params":{"index":0,"item":null,"params":{"angle":180,"lightRotation":30}}}}
+{"name":"run_command","arguments":{"command":"effect.setParams","params":{"index":0,"item":null,"params":{"angle":180,"lightRotation":30,"cap":true}}}}
 {"name":"run_command","arguments":{"command":"effect.setParams","params":{"index":0,"item":null,"params":{"expandVisibleOnly":true}}}}
 {"name":"run_command","arguments":{"command":"effect.expandAppearance","params":{}}}
 ```
@@ -1709,9 +1720,23 @@ selection, or to the first artboard when no artboard is under the center. With `
 the objects on artboard `artboard`, or on the first artboard when the call gives none; an index the document doesn't
 have is an error.
 
-The desktop app adds its active artboard, the one the Artboards panel highlights, to the `object.align` and
-`select.allOnArtboard` calls it runs without `artboard`, as it does for `edit.pasteInPlace`, `edit.pasteInFront` and
-`edit.pasteInBack`, and to each `command.batch`. A batch passes its `artboard` on to each of these steps that names
+`object.distribute {to: "artboard", artboard?}` and `object.distributeSpacing {to: "artboard", artboard?}` (the
+Distribute Objects and Distribute Spacing buttons with Align to Artboard) use the same artboard as `object.align`.
+`object.distribute` moves the first object, in the order of the line it spaces (left edges, centers or right edges; top
+edges, centers or bottom edges), until its left or top edge is on the artboard's left or top edge, and it moves the
+last object until its right or bottom edge is on the artboard's right or bottom edge. It spaces the other objects
+evenly by that line between them, and two objects are enough. `object.distributeSpacing` without `spacing` puts the
+left or top edge of the first object, in the order of those edges, on the artboard's left or top edge, and it puts the
+right or bottom edge of the last object on the artboard's right or bottom edge, with equal gaps between the objects.
+With `to: "selection"` or `"key"`, or without `to`, `object.distribute` and `object.distributeSpacing` without `spacing`
+keep the first and last objects where they are, and `object.distribute` moves nothing with fewer than three objects.
+With `spacing`, `object.distributeSpacing` does not use `to`. With anchor points selected (Direct Selection), both
+commands space the points among themselves and do not use `to` or `artboard`.
+
+The desktop app adds its active artboard, the one the Artboards panel highlights, to the `object.align`,
+`object.distribute`, `object.distributeSpacing` and `select.allOnArtboard` calls it runs without `artboard`, as it does
+for `edit.pasteInPlace`, `edit.pasteInFront` and `edit.pasteInBack`, and to each `command.batch`. A batch passes its
+`artboard` on to each of these steps that names
 none, when the step runs. When the document a step runs in has no artboard at that index (for example, after an
 earlier step deleted the active artboard when it was the last one), the step gets that document's last artboard. In
 remote mode, MCP's `run_command` calls and each step of the `command_batch` tool get the active artboard too. The
@@ -1723,6 +1748,7 @@ tool (`tool.select {tool: "artboard"}`) starts it on the active artboard: its `a
 
 ```json
 {"name":"run_command","arguments":{"command":"object.align","params":{"horizontal":"left","to":"artboard","artboard":1}}}
+{"name":"run_command","arguments":{"command":"object.distribute","params":{"horizontal":"left","to":"artboard","artboard":1}}}
 {"name":"run_command","arguments":{"command":"select.allOnArtboard","params":{"artboard":1}}}
 ```
 

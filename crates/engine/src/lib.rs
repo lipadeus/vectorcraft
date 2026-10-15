@@ -223,6 +223,16 @@ pub struct Interaction {
     pub(crate) copies: Option<Arc<PreviewCopies>>,
 }
 
+/// What Object → Transform → Transform Again (⌘D) repeats ([`SessionState::last_transform`]).
+#[derive(Clone, Debug, PartialEq)]
+pub enum LastTransform {
+    /// The last transform command's matrix, and the options Transform Again passes with it.
+    Matrix(Affine, Value),
+    /// The last Transform Each's parameters: each object transforms about its own bounds, so the
+    /// repeat runs the command on the selection of the moment rather than one matrix.
+    Each(Value),
+}
+
 /// This holds the copies that a transform with `copy` made of an interaction's snapshot
 /// ([`cmd::object::apply_transform`]). A later transform with `copy` of the same objects, while
 /// the document is still that snapshot, starts from `doc` and transforms only the copies.
@@ -280,11 +290,11 @@ pub struct DocState {
     pub interaction: Option<Interaction>,
     /// Edits made while this is open are one undo step (a scrubbed numeric field).
     pub undo_group: Option<UndoGroup>,
-    /// For Object → Transform → Transform Again (⌘D): the last transform's matrix and the options
-    /// Transform Again passes with it. A transform command keeps the `copy`, `typeAreas` and
-    /// `patterns` it used, and `strokes` and `corners` when it scales; a drag keeps the params of its
-    /// last preview with the values that preview noted ([`Session::note_journal`]).
-    pub last_transform: Option<(Affine, Value)>,
+    /// For Object → Transform → Transform Again (⌘D): what the last transformation was. A
+    /// transform command keeps the `copy`, `typeAreas` and `patterns` it used, and `strokes` and
+    /// `corners` when it scales; a drag keeps the params of its last preview with the values that
+    /// preview noted ([`Session::note_journal`]).
+    pub last_transform: Option<LastTransform>,
     /// What Select → Reselect repeats: the last selection command, its params and the objects
     /// selected when it ran (a Same command's reference objects).
     pub last_selection_cmd: Option<(String, Value, Vec<NodeId>)>,
@@ -537,16 +547,25 @@ impl DocState {
 pub const MAX_COORD: f64 = 4.0e6;
 
 /// The commands that act on the active artboard (#693), which the app passes as their `artboard`:
-/// Paste in Place, in Front and in Back paste onto it, Align to Artboard aligns to it, and All on
+/// Paste in Place, in Front and in Back paste onto it, Align to Artboard aligns to it, Distribute
+/// Objects and Distribute Spacing with Align to Artboard distribute objects across it, and All on
 /// Active Artboard selects on it. A `command.batch` given `artboard` passes it on to each of their
 /// steps that names none.
-pub const ON_ACTIVE_ARTBOARD: [&str; 5] = ["edit.pasteInPlace", "edit.pasteInFront", "edit.pasteInBack", "object.align", "select.allOnArtboard"];
+pub const ON_ACTIVE_ARTBOARD: [&str; 7] = [
+    "edit.pasteInPlace",
+    "edit.pasteInFront",
+    "edit.pasteInBack",
+    "object.align",
+    "object.distribute",
+    "object.distributeSpacing",
+    "select.allOnArtboard",
+];
 
 /// `(command, param)` pairs the journal records only so a replay reproduces the original run
 /// (dates from the clock: `cmd::clock_date`; the active artboard the app passes to the
 /// [`ON_ACTIVE_ARTBOARD`] commands and to a batch); an action leaves them out
 /// ([`Session::journal_for_action`]).
-const REPLAY_ONLY: [(&str, &str); 9] = [
+const REPLAY_ONLY: [(&str, &str); 11] = [
     ("file.new", "created"),
     ("document.save", "modified"),
     ("file.saveAs", "modified"),
@@ -554,6 +573,8 @@ const REPLAY_ONLY: [(&str, &str); 9] = [
     ("edit.pasteInFront", "artboard"),
     ("edit.pasteInBack", "artboard"),
     ("object.align", "artboard"),
+    ("object.distribute", "artboard"),
+    ("object.distributeSpacing", "artboard"),
     ("select.allOnArtboard", "artboard"),
     ("command.batch", "artboard"),
 ];
@@ -1087,6 +1108,8 @@ pub struct Session {
     /// While the active tool's actions run: their commands aren't "a command from outside the
     /// tool" ([`Session::after_command`]).
     pub(crate) in_tool_actions: bool,
+    /// While [`Session::preview`] runs its command: its edits are the interaction's own.
+    previewing: bool,
     /// Envelope Options with no envelope selected: the options and fidelity new envelopes get
     /// (`None`: the reference app's defaults, fidelity 50); not saved.
     pub(crate) envelope_defaults: Option<(vectorcraft_doc::live::EnvelopeOptions, f64)>,
@@ -1162,6 +1185,7 @@ impl Session {
             batch_stash: None,
             recovery: Default::default(),
             in_tool_actions: false,
+            previewing: false,
             envelope_defaults: None,
             liquify_stroke: None,
             plane_widget_press: false,
@@ -1458,11 +1482,20 @@ impl Session {
     /// Run `f` on a mutable copy of the active document. Outside an interaction this records one
     /// undo step labelled `label`; inside one it just mutates (the interaction commits later).
     pub fn edit<T>(&mut self, label: &str, f: impl FnOnce(&mut Document, &mut Selection) -> Result<T>) -> Result<T> {
+        // An edit made while typing (the Transform panel) is a step of its own: inside the typing
+        // session, the next keystroke's preview would start again from before it (#1881).
+        if !self.previewing && cmd::typing_in_progress(self) {
+            cmd::settle_interaction(self)?;
+        }
         let st = self.doc_mut()?;
         let before = st.doc.clone();
         let before_sel = st.selection.clone();
         let doc = Arc::make_mut(&mut st.doc);
-        let result = match f(doc, &mut st.selection) {
+        // Dimensions follow the art they measure.
+        let result = match f(doc, &mut st.selection).and_then(|v| {
+            cmd::dimension::refresh(&before, doc)?;
+            Ok(v)
+        }) {
             Ok(v) => match cmd::shaper::refresh(&before, Arc::make_mut(&mut st.doc)) {
                 Err(e) => Err(e),
                 Ok(()) => {
@@ -1554,6 +1587,11 @@ impl Session {
     // ---------- interactions (live drags) ----------
 
     pub fn begin_interaction(&mut self, label: &str) -> Result<()> {
+        // Typing in progress is kept first: a drag or a dialog's preview would otherwise start
+        // from the snapshot taken before the typing, and drop it (#1881).
+        if label != "Typing" && cmd::typing_in_progress(self) {
+            cmd::settle_interaction(self)?;
+        }
         let st = self.doc_mut()?;
         if st.interaction.is_some() {
             return Ok(());
@@ -1593,7 +1631,9 @@ impl Session {
         self.pending_paint = None;
         let rw = cmd::distortcmds::perspective_rewrite(self, cmd, params);
         let (cmd, params) = rw.as_ref().map_or((cmd, params), |(c, p)| (c.as_str(), p));
+        let outer = std::mem::replace(&mut self.previewing, true);
         let r = self.execute(cmd, params);
+        self.previewing = outer;
         let params = self.noted(params);
         let st = self.doc_mut()?;
         if let Some(it) = &mut st.interaction {
@@ -1618,6 +1658,9 @@ impl Session {
             ("Copy", false) if preview.0 == "object.transform" => it.label = "Move".into(),
             _ => {}
         }
+        // A preview that left the document as it was records no Transform Again either (as
+        // `keep_interaction` records no undo step): the last real transformation stands.
+        let changed = !Arc::ptr_eq(&it.doc, &st.doc);
         st.keep_interaction(it);
         if preview.0 == "object.transform" {
             let m = cmd::matrix_param(&preview.1, "matrix");
@@ -1629,9 +1672,13 @@ impl Session {
                     o.remove("matrix");
                     o.remove("ids");
                 }
-                st.last_transform = Some((m, options));
+                st.last_transform = Some(LastTransform::Matrix(m, options));
                 st.last_perspective = None;
             }
+        } else if preview.0 == "object.transformEach" && changed {
+            // Transform Again repeats it as it stood when OK was pressed.
+            st.last_transform = Some(LastTransform::Each(preview.1.clone()));
+            st.last_perspective = None;
         }
         if perspective_again.is_some() {
             st.last_perspective = perspective_again;
@@ -1849,6 +1896,8 @@ mod tests_large_edits;
 mod tests_layerclip;
 #[cfg(test)]
 mod tests_layers;
+#[cfg(test)]
+mod tests_legacy_ai;
 #[cfg(test)]
 mod tests_library;
 #[cfg(test)]

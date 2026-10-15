@@ -2152,6 +2152,37 @@ fn arb_ai_token() -> impl Strategy<Value = String> {
             "\n%AI3_BeginPattern: (Dots)\n(Dots) 0 0 6 6\n",
             "\n%AI3_EndPattern\n",
             "To",
+            // Legacy type (version 7 §15): text objects, their paths, attributes and strings.
+            "0 To",
+            "1 To",
+            "2 To",
+            "1e308 To",
+            "TO",
+            "1 0 0 1 10 10 0 Tp",
+            "0 0 0 0 1e308 -1e308 1e308 Tp",
+            "-1 0 0 -1 5 5 99.5 Tp",
+            "TP",
+            "/_Helvetica 12 9 3 Tf",
+            "/_ 1e308 Tf",
+            "-5 Tf",
+            "(H\\351llo\\r) Tx",
+            "(\\r) TX",
+            "() Tj",
+            "(x) Tx",
+            "7 Tr",
+            "-1e308 Ts",
+            "1e308 0 Tz",
+            "1e308 Tt",
+            "0 TA",
+            "1e308 -1e308 Tl",
+            "9 Ta",
+            "1e308 -1e308 1e308 Ti",
+            "0 1 Tk",
+            "[39/quotesingle 128/Euro/eacute/nosuch 300/x TE",
+            "[1e308/a -1/b TE",
+            "\n%AI3_BeginEncoding: _Helvetica Helvetica\n[/_Helvetica/Helvetica 0 0 1 TZ\n%AI3_EndEncoding AdobeType\n",
+            "\n%AI3_BeginEncoding:\n",
+            "800 Ar",
             "frobnicate",
             "\n%AI5_BeginLayer\n",
             "\n%AI5_EndLayer--\n",
@@ -2897,6 +2928,20 @@ fn pdf_streams_the_reader_would_fail_on_are_refused() {
         format!("q 10 0 0 10 0 0 cm BI /W 2 /H 2 /CS /G /BPC 8 /F [/AHx /Fl] /DP [null {dp}] ID {data}> EI Q")
     };
     let form = |dict: &str, content: &str| pdf_with("/F Do", "<< /XObject << /F 5 0 R >> >>", &[packed(&format!("{FORM} {dict}"), content)]);
+    // A calculator function with the deflated program `z`, to write inside another object. Its
+    // data is in hexadecimal digits with spaces between them, so the object around it still reads.
+    let calculator = |z: &[u8], dp: &str| {
+        let data: String = z.iter().map(|b| format!("{:X} {:X} ", b >> 4, b & 15)).collect();
+        let dict = format!("/FunctionType 4 /Domain [0 1] /Range [0 1 0 1 0 1] /Filter [/ASCIIHexDecode /FlateDecode] {dp}");
+        format!("<< {dict} /Length {} >>\nstream\n{data}\nendstream", data.len())
+    };
+    let held = |object: String| pdf_with("0 0 5 5 re f", "<< >>", &[object.into_bytes()]);
+    let shaded = |function: &str| {
+        let shading = format!("<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [0 0 100 0] /Function {function} >>");
+        pdf_with("/S sh", "<< /Shading << /S 5 0 R >> >>", &[shading.into_bytes()])
+    };
+    let spaces = calculator(&spaces_past_the_cap(), "");
+    let program = deflated(b"{ dup 1 exch sub 0 }");
     let files = [
         ("a form with Columns 0", form(zero, "0 0 5 5 re f")),
         ("a form with a huge Columns", form(huge, "0 0 5 5 re f")),
@@ -2905,6 +2950,10 @@ fn pdf_streams_the_reader_would_fail_on_are_refused() {
         ("an inline image in a compressed form", form("", &inline("<< /Predictor 2 /Columns 0 >>"))),
         ("an object stream with Columns 0", pdf_with_object_stream("[0 0 100 100]", zero)),
         ("a form of spaces past the cap", pdf_with("/F Do", "<< /XObject << /F 5 0 R >> >>", &[packed_as_is(FORM, &spaces_past_the_cap())])),
+        ("a function of spaces past the cap in an array", held(format!("[{spaces}]"))),
+        ("a function of spaces past the cap in a dictionary", held(format!("<< /K {spaces} >>"))),
+        ("a function of spaces past the cap in a shading", shaded(&spaces)),
+        ("a function with Columns 0 in an array", held(format!("[{}]", calculator(&program, "/DecodeParms [null << /Predictor 2 /Columns 0 >>]")))),
     ];
     on_a_small_stack(move || {
         for (what, bytes) in &files {
@@ -2916,7 +2965,8 @@ fn pdf_streams_the_reader_would_fail_on_are_refused() {
     });
     // Within range, the same files open.
     let fine = "/DecodeParms << /Predictor 1 /Columns 0 >>";
-    for bytes in [form(fine, "0 0 5 5 re f"), deep_pdf(&inline("<< /Predictor 1 >>"), "<< >>")] {
+    let function = calculator(&program, "");
+    for bytes in [form(fine, "0 0 5 5 re f"), deep_pdf(&inline("<< /Predictor 1 >>"), "<< >>"), held(format!("[{function}]")), shaded(&function)] {
         vectorcraft_engine::cmd::fileio::load("fine.pdf", &bytes).expect("opens");
     }
 }

@@ -415,7 +415,7 @@ impl Walker<'_, '_> {
     }
 
     fn note_fonts(&mut self, res: &Resources<'_>) {
-        for (key, _) in res.fonts.entries() {
+        for key in res.fonts.keys() {
             if let Some(f) = res.fonts.get::<Dict<'_>>(key.as_ref())
                 && let Some(name) = f.get::<Name<'_>>(b"BaseFont")
             {
@@ -545,10 +545,8 @@ impl Walker<'_, '_> {
                     self.painted(true);
                 }
                 // Drawn when the interpreter can read the shading: the page's count tells.
-                TypedInstruction::Shading(s) => {
-                    if res.get_shading(s.0).is_some() {
-                        self.painted(false);
-                    }
+                TypedInstruction::Shading(s) if res.get_shading(s.0).is_some() => {
+                    self.painted(false);
                 }
                 TypedInstruction::ShowText(_)
                 | TypedInstruction::ShowTexts(_)

@@ -1455,6 +1455,20 @@
 	Left:	左：
 	Legacy Macintosh RGB (Gamma 1.8)	舊版 Macintosh RGB (Gamma 1.8)
 	Legacy vector clipboard	舊版向量剪貼簿
+	Legacy (version 7)	舊版 (版本 7)
+	Transparent Images:	透明影像：
+	Flatten	平面化
+	Omit	略過
+	Legacy .ai Options	舊版 .ai 選項
+	A legacy .ai file holds one artboard: each artboard you check is saved as a separate file.	舊版 .ai 檔案只包含一個工作區域：勾選的每個工作區域都會儲存為獨立的檔案。
+	{count} of {total} artboards	{total} 個工作區域中的 {count} 個
+	Check an artboard to save.	請勾選要儲存的工作區域。
+	Hidden Objects:	隱藏的物件：
+	Hidden Layer	隱藏圖層
+	Make Visible	設為可見
+	Text:	文字：
+	Editable	可編輯
+	PDF-compatible	與 PDF 相容
 	Legacy vector clipboard (no transparency)	舊版向量剪貼簿 (無透明度)
 	Less	較少
 	Letter	Letter
@@ -3741,3 +3755,34 @@ lighting	Light	光源
 	Softness	柔和度
 	Ambient Light	環境光
 	Light behind the object	光源位於物件後方
+# Dimension tool (linked dimension annotations)
+	Create Dimension	建立尺寸標註
+	Dimension Tool	尺寸標註工具
+	Dimension Tool Options	尺寸標註工具選項
+	Font Family:	字體系列：
+	Font Style:	字體樣式：
+	Precision:	精確度：
+	Update Dimensions	更新尺寸標註
+	Display	顯示
+
+# Dimension tool and Object › Dimensions (dimension groups, their dialog and messages).
+	Dimension	尺寸
+	Drawing : real size — 1:10 labels 1 unit on the page as 10.	圖紙 : 實際尺寸 — 1:10 會將頁面上的 1 個單位標示為 10。
+	Preview (1 inch on the page)	預覽（頁面上 1 英寸）
+	Set as Default	設為預設
+	 out from a highlighted edge to place its dimension  |  	 從醒目提示的邊緣向外拖曳以放置其尺寸  |  
+	 cancels  |  Double-click the tool for options	 取消  |  按兩下工具開啟選項
+	Linear	線性
+	Angular	角度
+	Away from the Line	遠離尺寸線
+	Between Line and Object	在尺寸線與物件之間
+	Drag out from a segment, or click two points, then click to place.	從線段向外拖曳，或按一下兩個點，然後按一下以放置。
+	Drag out from a corner, or click two straight lines, then click to place.	從角向外拖曳，或按一下兩條直線，然後按一下以放置。
+	Drag out from a circle or arc for its radius, inwards for its diameter.	從圓形或圓弧向外拖曳得到半徑，向內拖曳得到直徑。
+@msg	Choose a circle or a perfect arc	請選擇圓形或標準圓弧
+@msg	Choose a precision from 0 to 6	請選擇 0 到 6 之間的精度
+	X:	X：
+	Y:	Y：
+# Revolve cap description
+	Close the circular ends of open profiles. Partial sweeps keep their cut sides open.	封閉開放輪廓的圓形端部。部分旋轉的切割側面保持開放。
+	Distance	距離
