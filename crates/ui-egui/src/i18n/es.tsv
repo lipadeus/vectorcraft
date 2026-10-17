@@ -642,6 +642,7 @@
 	Created:	Creado:
 	Crop	Recortar
 	Crop Image	Recortar imagen
+	Edit Path	Editar trazado
 	Mask	Máscara
 	Crop Marks	Marcas de corte
 	Crop To	Recortar a
@@ -1346,6 +1347,9 @@
 	Highlight Substituted Glyphs	Resaltar glifos sustituidos
 	History	Historial
 	History Options…	Opciones de historial…
+	Step Backward	Paso atrás
+	Step Forward	Paso adelante
+	Set History Limit…	Definir límite de historial…
 	History States	Estados de historial
 # History panel: the names of undo steps (`every_undo_label_is_translated`).
 	Apply Data Set	Aplicar conjunto de datos
@@ -4525,6 +4529,8 @@ lighting	Light	Luz
 @msg	missing panel layout	Falta la distribución de paneles
 @msg	unsupported native docking operation	Operación nativa de anclaje no admitida
 	Linux Display Server	Servidor de pantalla de Linux
+	X11 (XWayland) When a Pen Is Attached	X11 (XWayland) cuando hay un lápiz conectado
+	If a drawing tablet's pen doesn't draw, choose an X11 (XWayland) option.	Si el lápiz de una tableta digitalizadora no dibuja, elige una opción X11 (XWayland).
 	X11 (XWayland)	X11 (XWayland)
 	Ruler Origin	Origen de las reglas
 	Reset Ruler Origin	Restablecer el origen de las reglas
@@ -4998,6 +5004,11 @@ mark-style	Japanese	Japonesas
 	Softness	Suavidad
 	Ambient Light	Luz ambiental
 	Light behind the object	Luz detrás del objeto
+# 3D light management.
+	Lights	Luces
+	Add Light	Añadir luz
+	Delete Light	Eliminar luz
+3d	Light	Luz
 	Registration:	Registro:
 # Dimension tool (linked dimension annotations)
 	Create Dimension	Crear cota

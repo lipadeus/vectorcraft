@@ -8,7 +8,7 @@
 //! - `svg`: the SVG Options (styling, fonts, images, object ids, artboards…).
 //! - `export`: `document.export` / `serialize` / `exportSelection` / `exportForOffice`.
 //! - `screens`: Export for Screens (`document.exportForScreens`, `document.exportSettings`); `zip`
-//!   packs its files as one download.
+//!   packs its files as one download, and reads the files of Word documents placed as type.
 //! - `save`: `document.save`, Save As / a Copy / as Template, New from Template, Revert and the
 //!   per-format options (`file.formatOptions`); [`save_with`] is the one save path of every frontend.
 //! - `pdf`: PDF settings and presets for every PDF export, `document.exportPdf`.
@@ -45,7 +45,7 @@ mod save;
 mod screens;
 mod svg;
 mod text;
-mod zip;
+pub mod zip;
 
 use serde_json::{Value, json};
 
@@ -78,7 +78,8 @@ pub use screens::{
     builtin_presets as screen_export_builtin_presets, preset_rows as screen_preset_rows,
 };
 pub(crate) use screens::{
-    SHARED_KEYS as SCREEN_SETTINGS_KEYS, check_settings as check_screen_settings, export as export_screens, store_settings as store_screen_settings,
+    SHARED_KEYS as SCREEN_SETTINGS_KEYS, check_settings as check_screen_settings, export as export_screens, safe_file_name,
+    store_settings as store_screen_settings,
 };
 pub use svg::options_map as svg_options;
 /// Atomic file writes (a temporary file renamed over the target: a failed write never damages the
@@ -141,7 +142,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Export for Screens",
             ["File", "Export"],
             None,
-            "{folder?, zip?: false (one store-only .zip of every file: no folder → {name, dataBase64, bytes, files: [name…]}; with a folder it is written there → {path, bytes, files}), artboards?: [index…] | range?: \"1-3\" (default all), assets?: [asset id…] (instead of artboards: each asset's art alone, cropped to its bounds and named after the asset; see assets.list), layers?: [layer id…] (instead of artboards: each layer's art alone, sublayers included, named after the layer), selection?: one|each (instead of artboards: the selected art as one file, or a file per selected object, named after it), fullDocument?: false (one file per format instead: a PDF of every artboard, other formats the bounds of all visible art, named after the document), includeBleed?: false (artboards grown by the document's bleed), exportPreset?: (a preset of document.exportPresets.list: its settings, under these params), subfolders?: false (each row's files in a sub-folder: its folder, else its size for raster (1x, 2x, 100w…) or its format (SVG, PDF)), folders?: none|rows (as subfolders)|format (a folder per extension: png, svg, pdf…)|item (a folder per artboard, asset, layer or object)|itemFormat (item/extension) (default: rows with subfolders or a preset, else none), name?: (a file name pattern instead of the item's name, with <filename> for the document, <name> for the artboard, asset, layer or object, <index> from 1, #### for the counter zero-padded to the run of #, <format>, <scale>, <suffix> (else the row's suffix ends the name), YYYYMMDD, YYYY-MM-DD, YYYY, <date>, <time>, <YYYY>, <MM>, <DD>, <hh>, <mm> and <ss>; a trailing .ext is dropped, as in `COMPANY-Logo-<filename>-####-YYYYMMDD`; different files it names alike get -2, -3…), counterStart?: 1, counterPer?: item (every file of an item has its number)|file, date?: YYYY-MM-DD (the date the pattern uses; default today, UTC), preset?: mobile (PNG 1x, 2x, 3x) | density (PNG 0.75x–4x in ldpi…xxxhdpi sub-folders) instead of formats (turns subfolders on), formats?: [{format: png|png8|jpg|webp|gif|tiff|bmp|tga|psd|svg|svgz|pdf|eps|ai|vectorcraft, scale?: 1 | \"2x\" | \"100w\" | \"100h\" | \"72ppi\", width?: px | height?: px | ppi? (raster only; width, then height, then ppi win over scale), suffix?: (raster default: @2x, @100w, @100h, none at 1x; vector formats drop size suffixes), folder?: (its sub-folder), quality?: (jpg 0–100), …the format's options (antiAlias, background, preset (pdf)…)}], settings?: {png|png8|jpg|webp|gif|tiff|bmp|tga|psd|svg|svgz|pdf|eps|ai|vectorcraft: {…options for every row of that format}} (rows' own options win), prefix?, antiAlias?: none|art|type (raster rows without their own), openLocation?: (remembered; the app shows the files after exporting)} one file per artboard and format (a PDF holds its artboard alone; artboards with the same name, in any case, get -2, -3…; an unnamed one is Artboard-N) → {files: [path…]}; no folder → {files: [{name, dataBase64}]} (names include sub-folders: 2x/Icon@2x.png). eps, ai and vectorcraft rows write a document of the item alone (its one artboard). The params (but zip and assets) are remembered in the document (document.exportSettings; not an undo step)",
+            "{folder?, zip?: false (one store-only .zip of every file: no folder → {name, dataBase64, bytes, files: [name…]}; with a folder it is written there → {path, bytes, files}), artboards?: [index…] | range?: \"1-3\" (default all), assets?: [asset id…] (instead of artboards: each asset's art alone, cropped to its bounds and named after the asset; see assets.list), layers?: [layer id…] (instead of artboards: each layer's art alone, sublayers included, named after the layer), selection?: one|each (instead of artboards: the selected art as one file, or a file per selected object, named after it), fullDocument?: false (one file per format instead: a PDF of every artboard, other formats the bounds of all visible art, named after the document), includeBleed?: false (artboards grown by the document's bleed), exportPreset?: (a preset of document.exportPresets.list: its settings, under these params), subfolders?: false (each row's files in a sub-folder: its folder, else its size for raster (1x, 2x, 100w…) or its format (SVG, PDF)), folders?: none|rows (as subfolders)|format (a folder per extension: png, svg, pdf…)|item (a folder per artboard, asset, layer or object)|itemFormat (item/extension) (default: rows with subfolders or a preset, else none), name?: (a file name pattern instead of the item's name, with <filename> for the document, <name> for the artboard, asset, layer or object, <index> from 1, #### for the counter zero-padded to the run of #, <format>, <scale>, <suffix> (else the row's suffix ends the name), YYYYMMDD, YYYY-MM-DD, YYYY, <date>, <time>, <YYYY>, <MM>, <DD>, <hh>, <mm> and <ss>; a trailing .ext is dropped, as in `COMPANY-Logo-<filename>-####-YYYYMMDD`; different files it names alike get -2, -3…), counterStart?: 1, counterPer?: item (every file of an item has its number)|file, date?: YYYY-MM-DD (the date the pattern uses; default today, UTC), preset?: mobile (PNG 1x, 2x, 3x) | density (PNG 0.75x–4x in ldpi…xxxhdpi sub-folders) instead of formats (turns subfolders on), formats?: [{format: png|png8|jpg|webp|gif|tiff|bmp|tga|psd|svg|svgz|pdf|eps|ai|vectorcraft, scale?: 1 | \"2x\" | \"100w\" | \"100h\" | \"72ppi\", width?: px | height?: px | ppi? (raster only; width, then height, then ppi win over scale), suffix?: (raster default: @2x, @100w, @100h, none at 1x; vector formats drop size suffixes), folder?: (its sub-folder), quality?: (jpg 0–100), …the format's options (antiAlias, background, preset (pdf)…)}], settings?: {png|png8|jpg|webp|gif|tiff|bmp|tga|psd|svg|svgz|pdf|eps|ai|vectorcraft: {…options for every row of that format}} (rows' own options win), prefix?, antiAlias?: none|art|type (raster rows without their own), openLocation?: (remembered; the app shows the files after exporting)} one file per artboard and format (a PDF holds its artboard alone; artboards with the same name, in any case, get -2, -3…; an unnamed one is Artboard-N) → {files: [path…]}; no folder → {files: [{name, dataBase64}]} (names include sub-folders: 2x/Icon@2x.png); every reply has warnings: [the encoders' warnings for the files, each once: an image that couldn't be decoded, type written in the fallback font…]. eps, ai and vectorcraft rows write a document of the item alone (its one artboard). The params (but zip and assets) are remembered in the document (document.exportSettings; not an undo step)",
             has_doc,
             screens::export_for_screens
         ),
@@ -186,7 +187,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Batch…",
             [],
             None,
-            "{commands: [{command, params}] (the action's steps), source?: folder (default) | datasets, folder? (required for folder: the source folder), includeSubdirs?: false, destination?: none (default: leave each file open) | saveAndClose (save over the source and close) | folder (save or export into destinationFolder and close), destinationFolder? (required when destination is folder; also the folder Override Save/Export write into), overrideOpen?: true (skip document.open / file.open steps: the batch opens each source file), overrideSave?: true (point document.save / file.save / file.saveAs at destinationFolder/{stem}.{ext}), overrideExport?: true (point document.export / document.exportForScreens / document.exportSelection the same way), stopOnError?: true, label?} play the commands on every readable file in folder (and its subfolders when includeSubdirs), or on every data set of the open document (source: datasets; File + Data Set Name for the folder destination and Override Save/Export, with `/`, `\\` and `:` in the data set's name as `-`, and `-2`, `-3`… added to a name already used). Caps: 500 files or data sets, 8 folder levels, 256 steps. Batches cannot nest. → {processed: [{path|dataset, result|error}…], count, failed, stopped}",
+            "{commands: [{command, params}] (the action's steps), source?: folder (default) | datasets, folder? (required for folder: the source folder), includeSubdirs?: false, destination?: none (default: leave each file open) | saveAndClose (save over the source and close) | folder (save or export into destinationFolder and close), destinationFolder? (required when destination is folder; also the folder Override Save/Export write into), overrideOpen?: true (skip document.open / file.open steps: the batch opens each source file), overrideSave?: true (point document.save / file.save / file.saveAs at destinationFolder/{stem}.{ext}), overrideExport?: true (point document.export / document.exportForScreens / document.exportSelection the same way), stopOnError?: true, label?} play the commands on every readable file in folder (and its subfolders when includeSubdirs), or on every data set of the open document (source: datasets; File + Data Set Name for the folder destination and Override Save/Export, with `/`, `\\`, `:`, `<`, `>`, `\"`, `|`, `?`, `*` and control characters in the data set's name as `-`, and `-2`, `-3`… added to a name already used). Caps: 500 files or data sets, 8 folder levels, 256 steps. Batches cannot nest. → {processed: [{path|dataset, result|error}…], count, failed, stopped}",
             always,
             action_batch::action_batch
         ),
@@ -213,7 +214,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Save for Office Documents…",
             ["File"],
             None,
-            "{path?, ppi?: 150 (72, 150, 300… pixels per inch), transparent?: false (else on white), artboard?: 0, acknowledgeLoss?: bool (write over the file the document was read from although reading it left things out)} the artboard as a PNG for office documents and slides → {path, bytes, width, height} (pixels); no path → {dataBase64, bytes, width, height}",
+            "{path?, ppi?: 150 (72, 150, 300… pixels per inch), transparent?: false (else on white), artboard?: 0, acknowledgeLoss?: bool (write over the file the document was read from although reading it left things out)} the artboard as a PNG for office documents and slides → {path, bytes, width, height, warnings} (pixels); no path → {dataBase64, bytes, width, height, warnings}; warnings as for document.export (an image that couldn't be decoded, type in the fallback font or that doesn't fit its frame)",
             has_doc,
             export::export_for_office
         ),
@@ -710,7 +711,11 @@ pub const TEXT_EXTS: &[&str] = &["txt"];
 /// RTF files: File → Place sets them as area type with their formatting.
 pub const RTF_EXTS: &[&str] = &["rtf"];
 
-/// Every extension File → Place reads: [`OPEN_EXTS`], [`TEXT_EXTS`] and [`RTF_EXTS`].
+/// Word documents: File → Place sets them as area type with their formatting.
+pub const DOCX_EXTS: &[&str] = &["docx"];
+
+/// Every extension File → Place reads: [`OPEN_EXTS`], [`TEXT_EXTS`], [`RTF_EXTS`] and
+/// [`DOCX_EXTS`].
 pub const PLACE_EXTS: &[&str] = &[
     "vectorcraft",
     "drawcraft",
@@ -741,6 +746,7 @@ pub const PLACE_EXTS: &[&str] = &[
     "afpub",
     "txt",
     "rtf",
+    "docx",
 ];
 
 /// One dialog filter per readable format.
@@ -764,13 +770,14 @@ pub fn open_filters() -> impl Iterator<Item = (&'static str, &'static [&'static 
         .chain(std::iter::once(("Plug-ins", super::plugin::EXTS)))
 }
 
-/// File → Place dialog filters: "All placeable files", then one per placeable format, then text
-/// and RTF.
+/// File → Place dialog filters: "All placeable files", then one per placeable format, then text,
+/// RTF and Word.
 pub fn place_filters() -> impl Iterator<Item = (&'static str, &'static [&'static str])> {
     std::iter::once(("All placeable files", PLACE_EXTS))
         .chain(format_filters().filter(|(_, exts)| exts.iter().all(|ext| PLACE_EXTS.contains(ext))))
         .chain(std::iter::once(("Text", TEXT_EXTS)))
         .chain(std::iter::once(("RTF", RTF_EXTS)))
+        .chain(std::iter::once(("Word", DOCX_EXTS)))
 }
 
 /// A format by id or extension (any case, leading dot allowed; `jpeg` finds `jpg`).

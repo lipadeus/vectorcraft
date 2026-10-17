@@ -3,6 +3,7 @@
 
 use egui::{Color32, CornerRadius, Pos2, Sense, Shape, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 use serde_json::json;
+use vectorcraft_doc::text::TextKind;
 use vectorcraft_doc::{Node, NodeKind, SymbolBoxes, Unit};
 use vectorcraft_geom::{Affine, BezPath, PathEl, Point, Rect};
 use vectorcraft_tools::{Cursor, Mods, Overlay, PointerEvent, PointerKind};
@@ -315,6 +316,8 @@ pub fn show(app: &mut VectorcraftApp, ui: &mut Ui) {
         isolated: st.isolation.map(|id| id.0),
         // Appearance of Black › On Screen: Display All Blacks as Rich Black.
         rich_black: app.session.prefs.black_on_screen == "rich",
+        // A tool's drag on the canvas, during an interaction (not a dialog's preview).
+        dragging: app.session.in_interaction() && ui.data(|d| d.get_temp::<Drag>(drag_id())) == Some(Drag::Tool),
     };
     // Placed documents' bitmaps are being made: draw again when they are ready.
     if vectorcraft_render::placed_document::busy() {
@@ -376,6 +379,9 @@ pub fn show(app: &mut VectorcraftApp, ui: &mut Ui) {
             // During a drag or a dialog's preview, objects that only moved draw their raster
             // effects from the cached rasters of an earlier frame (#1257).
             interacting: key.interacting,
+            // During a tool's drag, raster effects without a cached raster to draw render at a
+            // lower resolution (#2558); the frame after the drag renders them as a still frame does.
+            dragging: key.dragging,
             rich_black: key.rich_black,
             ..opts
         };
@@ -2854,30 +2860,44 @@ fn task_bar(app: &mut VectorcraftApp, ui: &mut Ui, xf: &Xf) {
     let n = st.selection.len();
     let first = st.selection.objects.first().and_then(|id| st.doc.node(*id)).cloned();
     let is_group = first.as_ref().is_some_and(|f| matches!(f.kind, NodeKind::Group { .. }));
-    let is_text = first.as_ref().is_some_and(|f| matches!(f.kind, NodeKind::Text(_)));
     let is_image = first.as_ref().is_some_and(|f| matches!(f.kind, NodeKind::Image(_)));
+    let is_clip_group = first.as_ref().is_some_and(|f| matches!(f.kind, NodeKind::Group { clip: true, .. }));
+    let is_compound = first.as_ref().is_some_and(|f| matches!(f.kind, NodeKind::Compound { .. }));
+    let open_path = first.as_ref().is_some_and(|f| matches!(&f.kind, NodeKind::Path { path, .. } if !path.is_closed()));
+    let text = first.as_ref().and_then(|f| match &f.kind {
+        NodeKind::Text(t) => Some(&t.kind),
+        _ => None,
+    });
+    // Images and vector art selected together: a clipping mask is the likely next step.
+    let mixed = n > 1 && {
+        let images = st.selection.objects.iter().filter_map(|id| st.doc.node(*id)).filter(|o| matches!(o.kind, NodeKind::Image(_))).count();
+        images > 0 && images < n
+    };
     // An Image Trace object: the group the engine names "Image Trace", its source image first.
     let is_trace = is_group
         && first.as_ref().is_some_and(|f| {
             f.name.as_deref() == Some("Image Trace") && f.children().is_some_and(|c| c.first().is_some_and(|i| matches!(i.kind, NodeKind::Image(_))))
         });
-    let mut items: Vec<(&str, &str, &str)> = vec![]; // (label, icon, command)
+    let mut items: Vec<(&str, &str, &str, serde_json::Value)> = vec![]; // (label, icon, command, params)
+    let none = || json!({});
     if on_artboards {
         // As in the reference app, the Artboard tool offers to resize, duplicate and export the
         // artboards (<https://community.adobe.com/questions-652/contextual-task-bar-in-illustrator-2025-quick-actions-when-you-need-them-1546580>),
         // and to rearrange them (<https://creativepro.com/managing-artboards-in-illustrator/>).
-        items.push((tl!("Resize"), "move-diagonal-2", TASK_BAR_ARTBOARD_OPTIONS));
-        items.push((tl!("Duplicate"), "copy", TASK_BAR_DUPLICATE_ARTBOARDS));
+        items.push((tl!("Resize"), "move-diagonal-2", TASK_BAR_ARTBOARD_OPTIONS, none()));
+        items.push((tl!("Duplicate"), "copy", TASK_BAR_DUPLICATE_ARTBOARDS, none()));
         if st.doc.artboards.len() > 1 {
-            items.push((tl!("Rearrange All"), "dc-rearrange", TASK_BAR_REARRANGE_ARTBOARDS));
+            items.push((tl!("Rearrange All"), "dc-rearrange", TASK_BAR_REARRANGE_ARTBOARDS, none()));
         }
-        items.push((tl!("Export"), "share-2", "file.exportForScreens"));
+        items.push((tl!("Export"), "share-2", "file.exportForScreens", none()));
     } else {
+        // Edit Path: the Direct Selection tool, to edit the path's anchors.
+        let edit_path = || (tl!("Edit Path"), "dc-direct", "tool.select", json!({"tool": "directSelection"}));
         // As in the reference app, an image offers Image Trace and Crop Image, and traced art offers
         // Expand (<https://community.adobe.com/announcements-651/contextual-task-bar-in-illustrator-2025-quick-actions-when-you-need-them-1546580>).
         if n == 1 && is_image {
-            items.push((tl!("Image Trace"), "image", TASK_BAR_IMAGE_TRACE));
-            items.push((tl!("Crop Image"), "dc-pf-crop", "ui.cropImage"));
+            items.push((tl!("Image Trace"), "image", TASK_BAR_IMAGE_TRACE, none()));
+            items.push((tl!("Crop Image"), "dc-pf-crop", "ui.cropImage", none()));
         }
         // Direct-selected anchors take the place of a path's Offset Path and Simplify. For them the bar
         // offers Remove, Connect, Cut and Convert to corner or smooth, as the reference app does
@@ -2885,29 +2905,52 @@ fn task_bar(app: &mut VectorcraftApp, ui: &mut Ui, xf: &Xf) {
         // These run the same commands as the Control bar's anchor buttons.
         let anchors = !st.selection.anchors.is_empty();
         if anchors {
-            items.push((tl!("Remove Anchor Points"), "pen-tool-delete", "path.removeAnchors"));
-            items.push((tl!("Connect"), "dc-join", "path.join"));
-            items.push((tl!("Cut Path"), "scissors", "path.cutAtAnchors"));
-            items.push((tl!("Corner"), "dc-anchor", TASK_BAR_TO_CORNER));
-            items.push((tl!("Smooth"), "dc-anchor-smooth", TASK_BAR_TO_SMOOTH));
+            items.push((tl!("Remove Anchor Points"), "pen-tool-delete", "path.removeAnchors", none()));
+            items.push((tl!("Connect"), "dc-join", "path.join", none()));
+            items.push((tl!("Cut Path"), "scissors", "path.cutAtAnchors", none()));
+            items.push((tl!("Corner"), "dc-anchor", TASK_BAR_TO_CORNER, none()));
+            items.push((tl!("Smooth"), "dc-anchor-smooth", TASK_BAR_TO_SMOOTH, none()));
         }
+        // As in the reference app, open paths offer Join and Edit Path, compound paths and clipping
+        // masks their Release, images selected with vector art Make Clipping Mask, and type converts
+        // between point and area type (<https://helpx.adobe.com/illustrator/desktop/get-started/learn-the-basics/contextual-task-bar-overview.html>).
         if n > 1 {
-            items.push((tl!("Group"), "group", "object.group"));
-            items.push((tl!("Unite"), "squares-unite", "object.pathfinder.unite"));
+            items.push((tl!("Group"), "group", "object.group", none()));
+            if mixed {
+                items.push((tl!("Make Clipping Mask"), "dc-pf-crop", "object.clippingMask.make", none()));
+            } else {
+                items.push((tl!("Unite"), "squares-unite", "object.pathfinder.unite", none()));
+            }
         } else if is_trace {
-            items.push((tl!("Expand"), "maximize-2", "imageTrace.expand"));
+            items.push((tl!("Expand"), "maximize-2", "imageTrace.expand", none()));
+        } else if is_clip_group {
+            items.push((tl!("Edit Clipping Path"), "dc-direct", "object.clippingMask.editMask", none()));
+            items.push((tl!("Release Clipping Mask"), "ungroup", "object.clippingMask.release", none()));
         } else if is_group {
-            items.push((tl!("Ungroup"), "ungroup", "object.ungroup"));
-            items.push((tl!("Isolate"), "square-dashed", "object.isolate"));
-        } else if is_text {
-            items.push((tl!("Create Outlines"), "type", "type.createOutlines"));
+            items.push((tl!("Ungroup"), "ungroup", "object.ungroup", none()));
+            items.push((tl!("Isolate"), "square-dashed", "object.isolate", none()));
+        } else if is_compound {
+            items.push(edit_path());
+            items.push((tl!("Release Compound Path"), "ungroup", "object.compoundPath.release", none()));
+        } else if let Some(kind) = text {
+            items.push((tl!("Create Outlines"), "type", "type.createOutlines", none()));
+            // Point type converts to area type and back; type on a path doesn't.
+            match kind {
+                TextKind::Area { .. } => items.push((tl!("Convert To Point Type"), "type", "type.convertToPointType", none())),
+                TextKind::Point => items.push((tl!("Convert To Area Type"), "dc-type-area", "type.convertToAreaType", none())),
+                TextKind::OnPath { .. } => {}
+            }
         } else if is_image {
             // Offset Path and Simplify don't apply to an image.
         } else if !anchors {
-            items.push((tl!("Offset Path"), "square-dashed", "object.path.offsetPath"));
-            items.push((tl!("Simplify"), "spline", "object.path.simplify"));
+            if open_path {
+                items.push((tl!("Join"), "dc-join", "path.join", none()));
+            }
+            items.push(edit_path());
+            items.push((tl!("Offset Path"), "square-dashed", "object.path.offsetPath", none()));
+            items.push((tl!("Simplify"), "spline", "object.path.simplify", none()));
         }
-        items.push((tl!("Duplicate"), "copy", "edit.duplicate"));
+        items.push((tl!("Duplicate"), "copy", "edit.duplicate", none()));
     }
     let fill = first.as_ref().map(|f| f.appearance.fill_paint()).unwrap_or_default();
     let colored = has_colors(&st.doc, &st.selection.objects);
@@ -2916,7 +2959,7 @@ fn task_bar(app: &mut VectorcraftApp, ui: &mut Ui, xf: &Xf) {
     // rotated).
     let lowest = xf.quad(b).iter().map(|c| c.y).fold(f32::NEG_INFINITY, f32::max);
     let anchor = pos2(xf.to_screen(b.center()).x, lowest);
-    let est_w = 118.0 + items.iter().map(|(l, _, _)| l.len() as f32 * 7.2 + 44.0).sum::<f32>();
+    let est_w = 118.0 + items.iter().map(|(l, _, _, _)| l.len() as f32 * 7.2 + 44.0).sum::<f32>();
     // Its place under the selection, then where the handle moved it, kept on the canvas (with the
     // bar's size last frame, the estimate before it first shows).
     let under = pos2(anchor.x - est_w / 2.0, anchor.y + 28.0);
@@ -2962,7 +3005,7 @@ fn task_bar(app: &mut VectorcraftApp, ui: &mut Ui, xf: &Xf) {
                     } else if grip.hovered() {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
                     }
-                    for (label, icon, cmd) in &items {
+                    for (label, icon, cmd, params) in &items {
                         let galley = ui.painter().layout_no_wrap(label.to_string(), egui::FontId::proportional(13.0), t.text_strong);
                         let (r, resp) = ui.allocate_exact_size(vec2(galley.size().x + 38.0, 30.0), Sense::click());
                         if resp.hovered() {
@@ -2972,7 +3015,7 @@ fn task_bar(app: &mut VectorcraftApp, ui: &mut Ui, xf: &Xf) {
                         crate::icons::paint(ui, icon, egui::Rect::from_min_size(r.min + vec2(8.0, 7.0), vec2(16.0, 16.0)), t.icon);
                         ui.painter().galley(pos2(r.left() + 30.0, r.center().y - galley.size().y / 2.0), galley, t.text_strong);
                         if resp.clicked() {
-                            run = Some((*cmd, json!({})));
+                            run = Some((*cmd, params.clone()));
                         }
                     }
                     // The selected objects' Fill, Recolor Artwork and Lock, left out with the Artboard tool.
@@ -4368,7 +4411,7 @@ mod tests {
         app.session.pointer(&PointerEvent::new(PointerKind::Up, 181.9, 131.3), view).unwrap();
         assert!(upload(&mut app).is_none(), "not rendered on this thread");
         assert!(app.canvas.worker.as_ref().and_then(|w| w.pending.as_ref()).is_some_and(|k| !k.interacting), "sent to the worker");
-        let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(60);
         let mut after = None;
         while after.is_none() && std::time::Instant::now() < until {
             std::thread::sleep(std::time::Duration::from_millis(5));
@@ -4381,6 +4424,64 @@ mod tests {
         app.canvas.renderer = vectorcraft_render::Renderer::new();
         app.canvas.key = None;
         assert!(upload(&mut app) == Some(after), "the frame after the drag is what a fresh renderer draws");
+    }
+
+    /// A tool's drag on the canvas renders with `dragging` (#2558). At 3200% a rectangle with
+    /// Texturizer covers more than the raster budget, so no raster is kept for it, and each frame
+    /// of a Selection tool drag draws its filtered content at the drag's lower resolution. The
+    /// frame after the drag draws what a fresh renderer draws. A dialog's preview, an interaction
+    /// without a drag, renders without `dragging` and draws the same.
+    #[test]
+    fn a_drag_on_the_canvas_draws_raster_effects_at_a_lower_resolution() {
+        let mut app = VectorcraftApp::new(Session::new(), Default::default());
+        app.session.execute("file.new", &json!({"width": 400, "height": 300})).unwrap();
+        app.canvas.worker_started = true; // render on this thread
+        let id = app.run("shape.rectangle", json!({"x": 100, "y": 80, "width": 200, "height": 150})).unwrap()["id"].clone();
+        app.run("effect.apply", json!({"effect": "texture.texturizer", "ids": [id]})).unwrap();
+        app.select_tool("selection");
+        let ctx = egui::Context::default();
+        // One headless frame on a 1920 × 1200 window (a view larger than the drag's budget) with
+        // `events` → the art's raster it uploaded, None when it was not re-rendered.
+        let run = |app: &mut VectorcraftApp, events: Vec<egui::Event>| -> Option<Vec<Color32>> {
+            let raw = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, vec2(1920.0, 1200.0))), events, ..Default::default() };
+            let mut out = ctx.run_ui(raw, |ui| show(app, ui));
+            let art = app.canvas.texture.as_ref().map(|t| t.id());
+            let px = out.textures_delta.set.iter().find(|e| Some(*e.0) == art).and_then(|e| e.1.last()).map(|d| {
+                let egui::ImageData::Color(img) = &d.image;
+                img.pixels.clone()
+            });
+            out.textures_delta.clear();
+            px
+        };
+        run(&mut app, vec![]);
+        if let Some(vm) = app.view_mut() {
+            (vm.zoom, vm.center) = (32.0, Point::new(200.0, 155.0));
+        }
+        let still = run(&mut app, vec![]).expect("the zoomed view renders");
+        assert_eq!(app.canvas.renderer.stats.previewed, 0, "a still frame");
+        let at = app.canvas_rect.unwrap().center();
+        let button = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        run(&mut app, vec![egui::Event::PointerMoved(at)]);
+        run(&mut app, vec![button(at, true)]);
+        for step in [1.0, 2.0] {
+            let drawn = run(&mut app, vec![egui::Event::PointerMoved(at + vec2(13.0, 7.0) * step)]).expect("each frame of the drag renders");
+            assert!(app.canvas.key.as_ref().is_some_and(|k| k.interacting && k.dragging), "step {step}");
+            assert_eq!(app.canvas.renderer.stats.previewed, 1, "the filtered content, step {step}");
+            assert!(app.canvas.moved);
+            assert!(drawn != still, "the rectangle moved, step {step}");
+        }
+        let after = run(&mut app, vec![button(at + vec2(26.0, 14.0), false)]).expect("the frame after the drag renders");
+        assert!(app.canvas.key.as_ref().is_some_and(|k| !k.interacting && !k.dragging));
+        assert_eq!(app.canvas.renderer.stats.previewed, 0, "the frame after the drag");
+        assert!(!app.canvas.moved);
+        app.canvas.renderer = vectorcraft_render::Renderer::new();
+        app.canvas.key = None;
+        assert!(run(&mut app, vec![]) == Some(after.clone()), "the frame after the drag is what a fresh renderer draws");
+        // A dialog's preview: an interaction, and no drag.
+        app.session.begin_interaction("Texturizer").unwrap();
+        assert!(run(&mut app, vec![]) == Some(after), "a dialog's preview draws the effect at full resolution");
+        assert!(app.canvas.key.as_ref().is_some_and(|k| k.interacting && !k.dragging));
+        assert_eq!(app.canvas.renderer.stats.previewed, 0);
     }
 
     /// The frame after an interaction renders without `interacting` also when the interaction
@@ -6573,7 +6674,7 @@ mod tests {
         // A selected object with the Selection tool: its own actions, none of the artboards'.
         app.select_tool("selection");
         app.session.execute("shape.rectangle", &json!({"x": 20, "y": 20, "width": 40, "height": 40})).unwrap();
-        assert_eq!(names(&mut app), ["Offset Path", "Simplify", "Duplicate"]);
+        assert_eq!(names(&mut app), ["Edit Path", "Offset Path", "Simplify", "Duplicate"]);
 
         // One artboard: nothing to rearrange.
         app.session.execute("file.new", &json!({"width": 200, "height": 100})).unwrap();
@@ -6675,7 +6776,7 @@ mod tests {
         app.session.execute("file.new", &json!({"width": 400, "height": 300})).unwrap();
         let mut square =
             |x: f64, y: f64| app.session.execute("shape.rectangle", &json!({"x": x, "y": y, "width": 40, "height": 40})).unwrap()["id"].clone();
-        let (a, b) = (square(120.0, 40.0), square(220.0, 150.0));
+        let (a, b) = (square(120.0, 40.0), square(160.0, 150.0));
         app.select_tool("selection");
         let ctx = egui::Context::default();
         let bar = || task_bar_rect(&ctx).expect("the task bar shows");

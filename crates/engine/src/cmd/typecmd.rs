@@ -39,7 +39,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Optical Margin Alignment",
             ["Type"],
             None,
-            "{ids?|id?, on?: bool} turn Optical Margin Alignment on or off for the selected type (on omitted: the opposite of the first object's setting): in every left-to-right paragraph of point and area type, quotation marks, hyphens, full stops and commas at a line's start or end hang wholly outside the margin there; asterisks, tildes, ellipses, en and em dashes, colons and semicolons hang by half; and A, V, W, Y, v, w and y hang by a tenth of their advance; a left-aligned line hangs at its left margin, a right-aligned line hangs at its right margin, and centered and justified lines hang at both → {on, ids}",
+            "{ids?|id?, on?: bool} turn Optical Margin Alignment on or off for the selected type and every frame of its threads (on omitted: the opposite of the first object's setting): in every left-to-right paragraph of point and area type, quotation marks, hyphens, full stops and commas at a line's start or end hang wholly outside the margin there; asterisks, tildes, ellipses, en and em dashes, colons and semicolons hang by half; and A, V, W, Y, v, w and y hang by a tenth of their advance; a left-aligned line hangs at its left margin, a right-aligned line hangs at its right margin, and centered and justified lines hang at both → {on, ids}",
             has_selection,
             optical_margin_alignment
         ),
@@ -107,9 +107,9 @@ fn orientation(s: &mut Session, p: &Value, vertical: bool) -> Result<Value> {
 }
 
 /// Type › Optical Margin Alignment: set `on` (without it, the opposite of the first object's
-/// setting) on every selected text object, in one undo step.
+/// setting) on every selected text object and every frame of their threads, in one undo step.
 fn optical_margin_alignment(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids = text_targets(s, p, "Optical Margin Alignment")?;
+    let ids = super::threads::with_threads(&s.doc()?.doc, &text_targets(s, p, "Optical Margin Alignment")?);
     let first = ids.first().and_then(|id| match s.doc().ok()?.doc.node(*id).map(|n| &n.kind) {
         Some(NodeKind::Text(t)) => Some(t.optical_margin),
         _ => None,
@@ -1059,6 +1059,43 @@ mod area_tests {
         assert_eq!(paras(&s).0.hyphenation, HyphenationOptions { words_longer_than: 9, ..HyphenationOptions::default() });
         let old: vectorcraft_doc::ParaStyle = serde_json::from_value(json!({"justify": "Left", "hyphenate": true})).unwrap();
         assert_eq!(old.hyphenation, HyphenationOptions::default());
+    }
+
+    /// Paragraph panel menu › Roman Hanging Punctuation: `text.setFormat {romanHangingPunctuation}`
+    /// sets it per paragraph in one undo step, the opening quotation mark then hangs left of the
+    /// frame, it is saved only when on, and paragraph styles carry it.
+    #[test]
+    fn roman_hanging_punctuation_is_set_per_paragraph_and_saved_only_when_on() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"width": 400, "height": 400})).unwrap();
+        let id = s
+            .execute("text.create", &json!({"x": 10, "y": 10, "size": 40, "text": "“Quoted”\n“Two”", "area": {"width": 300, "height": 200}}))
+            .unwrap()["id"]
+            .as_u64()
+            .unwrap();
+        let text = |s: &Session| match &s.doc().unwrap().doc.node(NodeId(id)).unwrap().kind {
+            NodeKind::Text(t) => (**t).clone(),
+            _ => panic!("text"),
+        };
+        let left = |s: &Session| text(s).cached_bounds.unwrap().x0;
+        assert!(!text(&s).para_at(0).roman_hanging);
+        assert!(serde_json::to_value(text(&s).para_at(0)).unwrap().get("roman_hanging").is_none());
+        let inside = left(&s);
+        s.execute("select.set", &json!({"ids": [id]})).unwrap();
+        // Only the first paragraph (the caret's range).
+        s.execute("text.setFormat", &json!({"romanHangingPunctuation": true, "start": 0, "end": 0})).unwrap();
+        assert!(text(&s).para_at(0).roman_hanging && !text(&s).para_at(1).roman_hanging);
+        assert!(left(&s) < inside - 5.0, "{} {inside}", left(&s));
+        assert_eq!(serde_json::to_value(text(&s).para_at(0)).unwrap()["roman_hanging"], true);
+        let back: vectorcraft_doc::ParaStyle = serde_json::from_value(serde_json::to_value(text(&s).para_at(0)).unwrap()).unwrap();
+        assert!(back.roman_hanging);
+        s.execute("edit.undo", &json!({})).unwrap();
+        assert!(!text(&s).para_at(0).roman_hanging);
+        assert!((left(&s) - inside).abs() < 1e-9);
+        // A paragraph style carries it.
+        s.execute("paraStyle.new", &json!({"name": "Hung", "attrs": {"roman_hanging": true}})).unwrap();
+        s.execute("paraStyle.apply", &json!({"name": "Hung", "id": id})).unwrap();
+        assert!(text(&s).para_at(1).roman_hanging);
     }
 
     /// #432: while the interface is in Japanese, new type (text.create, text.createInPath) starts

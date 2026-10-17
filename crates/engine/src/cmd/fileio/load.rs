@@ -270,9 +270,13 @@ pub fn load_with(name: &str, bytes: &[u8], opts: &LoadOptions) -> Result<Loaded>
     {
         super::super::fileinfo::read_pdf(&mut doc.metadata, info);
     }
-    // Threaded type read from a file flows through its frames.
+    // Threaded type read from a file flows through its frames (the threaded type of a restored
+    // document keeps its text as saved), and every frame of a thread takes its first frame's
+    // Optical Margin Alignment setting.
     if !doc.text_threads.is_empty() && !restored {
         crate::cmd::threads::reflow(&Document::new(1.0, 1.0), &mut doc);
+    } else if !doc.text_threads.is_empty() {
+        crate::cmd::threads::share_optical_margin(&mut doc);
     }
     if let Some(mode) = opts.color_mode.filter(|m| *m != doc.color_mode) {
         super::super::colormgmt::set_color_mode(&mut doc, mode, true, None, opts.grays);
@@ -470,6 +474,8 @@ pub(crate) fn too_large_note(bytes: &[u8]) -> Option<String> {
 /// ink are written again with their inks together ([`vectorcraft_doc::cmyk::stored_cmyk_tiff`]);
 /// CMYK TIFFs with an alpha channel, which the decoder can't read, become RGBA in the active color
 /// settings' CMYK, as do CMYK Photoshop documents, whose merged image is read ([`psdread`]).
+/// 1-bit TIFFs compressed with CCITT Group 3, which the decoder can't read either, become RGBA
+/// too ([`vectorcraft_doc::cmyk::group3_tiff_rgba`]).
 /// Grayscale TIFFs with an alpha channel or other extra channels, which the decoder can't read
 /// either, become RGBA too, whether they store their channels together or one plane per channel.
 /// A TIFF with more strips or tiles than the decoder can count
@@ -504,7 +510,10 @@ pub fn raster_image(bytes: &[u8]) -> Result<RasterImage> {
     };
     let img = match (f.id == "tiff").then(extra_samples).flatten() {
         Some(img) => img,
-        None => reader.decode().map_err(err)?.to_rgba8(),
+        None => match (f.id == "tiff").then(|| vectorcraft_doc::cmyk::group3_tiff_rgba(bytes)).flatten() {
+            Some(read) => read.map_err(err)?,
+            None => reader.decode().map_err(err)?.to_rgba8(),
+        },
     };
     as_png(img, ppi)
 }

@@ -153,6 +153,7 @@
 	Expand…	Rozszerz…
 	Expand Appearance	Rozszerz wygląd
 	Crop Image	Kadruj obraz
+	Edit Path	Edytuj ścieżkę
 	Mask	Maska
 	Rasterize…	Rasteryzuj…
 	Create Gradient Mesh…	Utwórz siatkę gradientową…
@@ -1427,6 +1428,9 @@ lighting	Light	Światło
 	Use Text for Previews	Użyj tekstu w podglądach
 	{percent}% opacity	Krycie {percent}%
 	History Options…	Opcje historii…
+	Step Backward	Krok wstecz
+	Step Forward	Krok naprzód
+	Set History Limit…	Ustaw limit historii…
 	Open a document to see its history.	Otwórz dokument, aby zobaczyć jego historię.
 # History panel: the names of undo steps (`every_undo_label_is_translated`).
 	Apply Data Set	Zastosuj zestaw danych
@@ -3445,6 +3449,8 @@ axis	Both	Obie
 	Star	Gwiazda
 	Power Saving (integrated)	Oszczędzanie energii (zintegrowany)
 	Target	Cel
+	X11 (XWayland) When a Pen Is Attached	X11 (XWayland), gdy podłączone jest pióro
+	If a drawing tablet's pen doesn't draw, choose an X11 (XWayland) option.	Jeśli pióro tabletu graficznego nie rysuje, wybierz opcję X11 (XWayland).
 	X11 (XWayland)	X11 (XWayland)
 	Print as Bitmap	Drukuj jako bitmapę
 	Draft	Robocza
@@ -4894,6 +4900,11 @@ mark-style	Japanese	Japońskie
 	Softness	Miękkość
 	Ambient Light	Światło otoczenia
 	Light behind the object	Światło za obiektem
+# 3D light management.
+	Lights	Światła
+	Add Light	Dodaj światło
+	Delete Light	Usuń światło
+3d	Light	Światło
 	Registration:	Punkt rejestracji:
 	Legacy (version 7)	Starsza (wersja 7)
 	Transparent Images:	Przezroczyste obrazy:

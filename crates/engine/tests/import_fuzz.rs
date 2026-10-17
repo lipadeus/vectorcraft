@@ -1212,8 +1212,19 @@ proptest! {
     #![proptest_config(config())]
 
     #[test]
-    fn dataset_csv_garbage_never_panics(s in ".{0,300}", head in prop::sample::select(vec!["", "name,Title,Show,Chart\n", "Title\tShow\tChart\n", "name\tTitle\n", "Show,Chart\n"])) {
+    fn dataset_csv_garbage_never_panics(s in ".{0,300}", head in prop::sample::select(vec!["", "name,Title,Show,Chart\n", "Title\tShow\tChart\n", "name\tTitle\n", "Show,Chart\n", "name,#Show,@Photo,New\n", "#Shown\t@Title\tChart\n", "name,%Chart,#\n"])) {
         datasets("data set CSV garbage", json!({"csv": format!("{head}{s}")}))?;
+    }
+
+    #[test]
+    fn prefixed_dataset_headers_never_panic(
+        cells in prop::collection::vec((prop::sample::select(vec!["", "#", "@", "%", "#@", " # "]), "[A-Za-z #@%\"]{0,8}"), 1..8),
+        tabs in any::<bool>(),
+        body in ".{0,200}",
+    ) {
+        let sep = if tabs { "\t" } else { "," };
+        let header: Vec<String> = cells.iter().map(|(prefix, name)| format!("{prefix}{name}")).collect();
+        datasets("prefixed data set CSV header", json!({"csv": format!("{}\n{body}", header.join(sep))}))?;
     }
 
     #[test]
@@ -1363,6 +1374,54 @@ proptest! {
             let _ = no_panic(s.execute("file.place", &p));
         });
         prop_assert!(r.is_ok(), "{name}: panicked: {:?}", r.err());
+    }
+}
+
+/// 1-bit TIFFs compressed with CCITT Group 3: modified Huffman (Compression 2) in three strips, T.4
+/// (Compression 3) with two-dimensional rows, fill bits, six EOLs at the end and each byte's lowest
+/// bit first, and T.4 two-dimensional rows in 16 × 16 tiles.
+fn group3_samples() -> Vec<Vec<u8>> {
+    let rows: Vec<Vec<bool>> = (0..6).map(|y| (0..40).map(|x| (x * (y + 1) / 3 + y) % 4 < 2).collect()).collect();
+    let tiff = |compression, t4_options, fill_order, rows_per_strip, tile| {
+        let rtc = compression == 3;
+        let g = vectorcraft_testkit::tiff::Group3 { rows: &rows, compression, t4_options, photometric: 0, fill_order, rows_per_strip, tile, rtc };
+        vectorcraft_testkit::tiff::group3(&g)
+    };
+    vec![tiff(2, 0, 1, 2, None), tiff(3, 5, 2, 6, None), tiff(3, 1, 1, 6, Some((16, 16)))]
+}
+
+/// [`group3_samples`] place as images.
+#[test]
+fn the_group3_samples_place() {
+    for bytes in group3_samples() {
+        let mut s = vectorcraft_engine::Session::new();
+        s.execute("file.new", &json!({"width": 100, "height": 100})).unwrap();
+        s.execute("file.place", &json!({"name": "fax.tif", "dataBase64": vectorcraft_format::base64_encode(&bytes)})).unwrap();
+    }
+}
+
+proptest! {
+    #![proptest_config(config())]
+
+    /// Mutated Group 3 TIFFs (directory values, strip offsets and counts, the coded rows) never
+    /// crash reading or placing them.
+    #[test]
+    fn mutated_group3_tiffs_place_without_panics(which in 0usize..3, cut in 0usize..400, edits in prop::collection::vec((0usize..400, any::<u8>()), 0..12)) {
+        let mut bytes = group3_samples().swap_remove(which);
+        for (at, b) in edits {
+            if let Some(x) = bytes.get_mut(at) {
+                *x = b;
+            }
+        }
+        bytes.truncate(cut.max(8));
+        let r = catch_quiet(|| {
+            let mut s = vectorcraft_engine::Session::new();
+            s.execute("file.new", &json!({"width": 100, "height": 100})).unwrap();
+            let p = json!({"name": "fax.tif", "dataBase64": vectorcraft_format::base64_encode(&bytes), "thumbnail": 8});
+            let _ = no_panic(s.execute("file.place.info", &p));
+            let _ = no_panic(s.execute("file.place", &p));
+        });
+        prop_assert!(r.is_ok(), "panicked: {:?}", r.err());
     }
 }
 

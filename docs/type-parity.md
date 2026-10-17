@@ -32,9 +32,11 @@ against Illustrator's public documentation; **estimated** unless noted.
 | Missing glyphs set in an installed font made for their script (Thai, Lao, Khmer, Myanmar first; then any font that has them) | done | Thai: Leelawadee UI, Tahoma, Thonburi, Sukhumvit Set, Noto Sans Thai, TLWG |
 | Full font-name matching (OpenType name ID 4) | done | #1258: loaded/cataloged faces and Missing Fonts searches; localized names and variable default faces; Windows font-service QA pending |
 | Variable fonts | partial | named instances as styles; Character panel › Variable Font sets each axis (`fontAxes`); the font menu's Variable filter is missing |
+| Fallback glyphs keep the text's weight and slant | done | #2491: a character from a fallback face is set in that family's face nearest the run's weight and slant; Bold Italic of a missing family is drawn Bold (Source Sans 3 has no Bold Italic) rather than Italic |
 | Colour fonts (OpenType SVG / COLR) | partial | |
 | Every-line and Single-line composers | done | tuned by eye, never compared side by side |
-| Optical Margin Alignment | done | Type › Optical Margin Alignment, `type.opticalMarginAlignment`: per type object, in point and area type of left-to-right paragraphs; type on a path and right-to-left paragraphs do not hang |
+| Optical Margin Alignment | done | Type › Optical Margin Alignment, `type.opticalMarginAlignment`: per type object, with one setting for all the frames of a thread, in point and area type of left-to-right paragraphs; type on a path and right-to-left paragraphs do not hang |
+| Roman Hanging Punctuation | done | Paragraph panel menu › Roman Hanging Punctuation, `text.setFormat {romanHangingPunctuation}` (#2756): per paragraph, Optical Margin Alignment's punctuation and amounts without the letters; paragraph styles carry it. Evidence: `tests::roman_hanging_punctuation_hangs_punctuation_but_not_letters`, `typecmd::area_tests::roman_hanging_punctuation_is_set_per_paragraph_and_saved_only_when_on` |
 | Hyphenation… and Justification… options | partial | Hyphenation… (`ui.hyphenation`, `text.setFormat`) sets each paragraph's Words Longer Than, After First, Before Last, Hyphen Limit, Hyphenation Zone (Single-line Composer only) and Hyphenate Capitalized Words, and paragraph styles carry them (#2310); Justification… missing (menu stub) |
 | Tab stops and leaders; Tabs panel | partial | Tabs panel and stops with leaders in the model (`text.tabs.set`); a stop drags from where the press landed (#1458); leaders fill the tab's gap, repeated on a grid so they line up from line to line (#1877) |
 | Hidden characters (Show Hidden Characters) | done | `type.hiddenCharacters` |
@@ -61,6 +63,7 @@ Character Styles menu New/Redefine and footer New capture the first selected cha
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-17 | minor | Roman Hanging Punctuation (#2756): per-paragraph hanging of Latin punctuation outside the margin; scores unchanged |
 | 2026-10-17 | minor | A click on area type's red out port loads the Selection tool with the overflow text; the next click threads it into a closed path or a new frame of the same shape there, a drag into a new rectangle (`text.thread.add`, #2572 in part). The out port moved up the frame's right side, clear of the corner handle. Scores and hours unchanged. |
 | 2026-10-16 | minor | Native font-family labels fall back from English-only typographic names to localized legacy names (#2208). English labels and native typographic precedence are preserved; synthetic loaded/catalog tests. Scores and estimates unchanged. |
 | 2026-10-16 | minor | Align Stroke on live type: the characters' stroke goes inside or outside the glyphs without creating outlines, for every run or a range; kept in the native file and in canvas, PDF, EPS and SVG output (#2294); beyond Illustrator, scores and hours unchanged |
@@ -79,6 +82,8 @@ Character Styles menu New/Redefine and footer New capture the first selected cha
 | 2026-10-13 | minor | Fit Headline no longer pushes the tracking to its ceiling and loses glyphs when the frame holds one line (#1445, fixes #1444); text frames, wrap shapes and type paths with coordinates beyond a billion points hold no text, and layout limits its search for room, instead of hanging (#1451); scores and hours unchanged |
 | 2026-10-12 | minor | Character styles retain explicit Auto leading, propagate resets and preserve local leading overrides; scores and hours unchanged |
 | 2026-10-12 | minor | A character no installed font had is looked for again after the fonts are rescanned, so installing a font fixes it without a restart (#1376, from #992); scores and hours unchanged |
+| 2026-10-16 | minor | Fallback glyphs keep the text's weight and slant; Bold Italic of a missing family keeps the bold (#2491); scores and hours unchanged |
+| 2026-10-16 | minor | A variable font whose name table says Light but whose default instance is Regular (Noto Sans Hebrew) lists and weighs its default face as Regular (#2521); scores and hours unchanged |
 | 2026-10-12 | minor | Full-name font matching and Missing Fonts searches (#1258): synthetic static/variable font regressions; Windows font-service QA pending; scores and hours unchanged |
 | 2026-10-11 | minor | Middle Eastern: digit types done (Character panel menu › Digits: Default, Arabic, Hindi, Farsi; `text.setFormat` / `text.setRangeStyle {digits}`); Character Direction, kashidas, composers and the split caret still missing; scores unchanged at this rounding |
 | 2026-10-11 | minor | Thai, Lao, Khmer and Myanmar words for the caret (Ctrl/Alt+arrows) and double-click; combining marks count as part of a word; score unchanged (estimated) |

@@ -195,6 +195,7 @@
 	Expand…	Laajenna…
 	Expand Appearance	Laajenna ulkoasu
 	Crop Image	Rajaa kuva
+	Edit Path	Muokkaa polkua
 	Mask	Maski
 	Rasterize…	Rasteroi…
 	Create Gradient Mesh…	Luo liukuväriverkko…
@@ -1487,6 +1488,9 @@ lighting	Light	Valo
 	Use Text for Previews	Käytä tekstiä esikatseluissa
 	{percent}% opacity	{percent}% peittävyys
 	History Options…	Historian asetukset…
+	Step Backward	Askel taaksepäin
+	Step Forward	Askel eteenpäin
+	Set History Limit…	Aseta historian raja…
 	Open a document to see its history.	Avaa asiakirja, niin näet sen historian.
 # History panel: the names of undo steps (`every_undo_label_is_translated`).
 	Apply Data Set	Käytä tietojoukkoa
@@ -3538,6 +3542,8 @@ axis	Both	Molemmat
 	Star	Tähti
 	Power Saving (integrated)	Virransäästö (integroitu)
 	Target	Kohde
+	X11 (XWayland) When a Pen Is Attached	X11 (XWayland), kun kynä on liitetty
+	If a drawing tablet's pen doesn't draw, choose an X11 (XWayland) option.	Jos piirtopöydän kynä ei piirrä, valitse jokin X11 (XWayland) -vaihtoehto.
 	X11 (XWayland)	X11 (XWayland)
 	Print as Bitmap	Tulosta bittikarttana
 	Draft	Vedos
@@ -4959,6 +4965,11 @@ mark-style	Japanese	Japanilainen
 	Softness	Pehmeys
 	Ambient Light	Ympäristövalo
 	Light behind the object	Valo objektin takana
+# 3D light management.
+	Lights	Valot
+	Add Light	Lisää valo
+	Delete Light	Poista valo
+3d	Light	Valo
 	2up	2 sivua
 	4up	4 sivua
 	A6	A6

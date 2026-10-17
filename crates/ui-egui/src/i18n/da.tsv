@@ -173,6 +173,7 @@
 	Expand…	Udvid…
 	Expand Appearance	Udvid udseende
 	Crop Image	Beskær billede
+	Edit Path	Redigér kurve
 	Mask	Maskér
 	Rasterize…	Rasterisér…
 	Create Gradient Mesh…	Opret gradientnet…
@@ -1434,6 +1435,9 @@ lighting	Light	Lys
 	Use Text for Previews	Brug tekst til forhåndsvisninger
 	{percent}% opacity	{percent}% opacitet
 	History Options…	Indstillinger for historik…
+	Step Backward	Et trin tilbage
+	Step Forward	Et trin frem
+	Set History Limit…	Angiv historikgrænse…
 	Open a document to see its history.	Åbn et dokument for at se dets historik.
 	Abutting	Stødende
 	Black and White	Sort-hvid
@@ -3373,6 +3377,8 @@ axis	Both	Begge
 	Star	Stjerne
 	Power Saving (integrated)	Strømbesparende (integreret)
 	Target	Mål
+	X11 (XWayland) When a Pen Is Attached	X11 (XWayland), når en pen er tilsluttet
+	If a drawing tablet's pen doesn't draw, choose an X11 (XWayland) option.	Hvis pennen til en tegneplade ikke tegner, skal du vælge en X11 (XWayland)-indstilling.
 	X11 (XWayland)	X11 (XWayland)
 	Print as Bitmap	Udskriv som bitmap
 	Draft	Udkast
@@ -4755,6 +4761,11 @@ mark-style	Japanese	Japansk
 	Softness	Blødhed
 	Ambient Light	Omgivelseslys
 	Light behind the object	Lys bag objektet
+# 3D light management.
+	Lights	Lyskilder
+	Add Light	Tilføj lyskilde
+	Delete Light	Slet lyskilde
+3d	Light	Lyskilde
 	2up	2 pr. ark
 	4up	4 pr. ark
 	A6	A6

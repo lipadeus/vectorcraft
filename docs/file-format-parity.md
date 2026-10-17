@@ -17,7 +17,7 @@ from the public specifications, and users' own `.ai` files are used locally only
 
 | | Illustrator | VectorCraft | Notes |
 |---|---:|---:|---|
-| Formats opened or placed | ~30 | 23 | missing: FreeHand, CorelDRAW, DWG, HEIC/HEIF, JPEG 2000, PICT, PCX, Pixar, Word, PS |
+| Formats opened or placed | ~30 | 24 | missing: FreeHand, CorelDRAW, DWG, HEIC/HEIF, JPEG 2000, PICT, PCX, Pixar, Word `.doc`, PS |
 | Formats saved (Save As) | 6 (AI, AIT, PDF, EPS, SVG, SVGZ) | 6 + native | `.ai` written PDF-compatible (no Illustrator editing data) or as legacy version 7 (layers and groups, one artboard per file) |
 | Formats exported | ~16 | 17 | missing: DWG, 3D (OBJ/USDA/glTF); extra: GIF/PNG-8 palette export, DXF up to 2018, layered PSD |
 | **Overall (weighted by use)** | | **~75%** | `.ai` and PDF dominate the weighting |
@@ -66,7 +66,8 @@ private editing data. VectorCraft:
   graphics and gradient or pattern fills make that type outlines, and Text: Outlines (`outlineText: true`) writes
   all type as outlines. The format can hide only layers: hidden objects go to a hidden layer of their own above
   their layer, are omitted, or are made visible (Hidden Objects, `hiddenObjects: "layer"|"omit"|"visible"`).
-  Sublayers become groups; appearances, effects and brushes are expanded; object names are left out.
+  Sublayers become groups; appearances, effects and brushes are expanded; object names are left out; layer
+  names are written in Windows-1252, with `?` for characters outside it.
   The file is also a PostScript program that runs: its prolog, a procedure set of VectorCraft's own written from
   the PostScript Language Reference, gives the format's operators their meaning, so it prints and previews
   (gradients filled with their first stop's colour, type left to the apps that read the format). VectorCraft
@@ -102,7 +103,7 @@ the app's own editing copy of a file (an EPS after its `%%EOF`, a `.ai`'s `AIPri
 | EMF / WMF | open, export | yes | yes | an oversized embedded PNG or JPEG is refused from its header, before any pixels are decoded (#1776) |
 | PSD | open, place, export | yes (merged image, every mode and depth) | yes (layered, max editability) | placing as layers (Photoshop Import Options) missing; the embedded ICC profile's tags are 4-byte aligned (#1584) |
 | PSB | open | yes (merged image) | no | |
-| PNG / JPEG / GIF / BMP / TIFF / Targa | open, export | yes (Targa: export only) | yes; TIFF is also selectable in Export for Screens and Asset Export with its existing options | Targa import missing; TIFF: grayscale with an alpha channel or other extra channels reads (#1466 in part), and so do files that store each channel as its own plane (PlanarConfiguration 2), CMYK ones with their ink amounts; CCITT Group 3 doesn't; the ICC profiles embedded in JPEG and TIFF have 4-byte aligned tags (#1584); PNG export marks its colours as sRGB (`embedIcc`, an `sRGB` chunk; no ICC profile is embedded, #2221) |
+| PNG / JPEG / GIF / BMP / TIFF / Targa | open, export | yes (Targa: export only) | yes; TIFF is also selectable in Export for Screens and Asset Export with its existing options | Targa import missing; TIFF: grayscale with an alpha channel or other extra channels reads (#1466 in part), and so do files that store each channel as its own plane (PlanarConfiguration 2), CMYK ones with their ink amounts, and 1-bit files compressed with CCITT Group 3 (Compression 2 and 3, one- and two-dimensional rows); the ICC profiles embedded in JPEG and TIFF have 4-byte aligned tags (#1584); PNG export marks its colours as sRGB (`embedIcc`, an `sRGB` chunk; no ICC profile is embedded, #2221) |
 | WebP | export (Export for Screens) | yes | yes (lossless only; lossy written lossless with a warning) | |
 | HEIC / HEIF | open, place | no | no | |
 | JPEG 2000 | open, place | no | no | |
@@ -111,7 +112,8 @@ the app's own editing copy of a file (an EPS after its `%%EOF`, a `.ai`'s `AIPri
 | CorelDRAW `.cdr` | open | no | no | |
 | Text `.txt` | place, export | place (Text Import Options) | yes | |
 | RTF `.rtf` | place | place (area type with fonts, size, bold, italic, underline, strikethrough, caps, superscript and subscript, color, alignment, indents and paragraph spacing) | no | `tests_textimport.rs`, `place/rtf.rs`; fuzzed (`text_import_fuzz.rs`); `\'hh` bytes read as Windows-1252 or Mac Roman only |
-| Word `.doc`/`.docx` | place | no | no | |
+| Word `.docx` | place | place (area type with the document's styles and its fonts, size, bold, italic, underline, strikethrough, caps, superscript and subscript, color, alignment, indents and paragraph spacing) | no | `tests_textimport.rs`, `place/docx.rs`; fuzzed (`text_import_fuzz.rs`); list numbers, pictures and text boxes are left out |
+| Word `.doc` | place | no | no | |
 | CSS | export (CSS Properties) | — | yes | |
 | OBJ / USDA / glTF | 3D export | — | no | needs 3D (gap G3) |
 | Affinity `.af`, `.afdesign`, `.afpub` | no | yes (beyond Illustrator) | no (#665) | 51 pinned files, [affinity-validation.md](affinity-validation.md) |

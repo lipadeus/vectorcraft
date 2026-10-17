@@ -741,6 +741,7 @@
 	Created:	Ngày tạo:
 	Crop	Cắt xén
 	Crop Image	Cắt xén ảnh
+	Edit Path	Sửa đường dẫn
 	Crop Marks	Dấu cắt xén
 	Crop To	Cắt xén đến
 	Crosshatch	Lưới đan
@@ -1548,6 +1549,9 @@ file-filter	Templates	Mẫu
 	Hindi	Hindi
 	History	Lịch sử
 	History Options…	Tùy chọn lịch sử…
+	Step Backward	Lùi một bước
+	Step Forward	Tiến một bước
+	Set History Limit…	Đặt giới hạn lịch sử…
 	History States	Trạng thái lịch sử
 # History panel: the names of undo steps (`every_undo_label_is_translated`).
 	Apply Data Set	Áp dụng tập dữ liệu
@@ -3869,6 +3873,8 @@ mark-style	Japanese	Kiểu Nhật
 	Workspace {i}	Không gian làm việc {i}
 	Wrinkle Tool	Công cụ nhăn
 	Write Layers	Ghi các lớp
+	X11 (XWayland) When a Pen Is Attached	X11 (XWayland) khi có bút được kết nối
+	If a drawing tablet's pen doesn't draw, choose an X11 (XWayland) option.	Nếu bút của bảng vẽ không vẽ được, hãy chọn một tùy chọn X11 (XWayland).
 	X11 (XWayland)	X11 (XWayland)
 	XML ID	XML ID
 	Yards	Yard
@@ -4648,6 +4654,11 @@ theme	Appearance	Giao diện
 	Softness	Độ mềm
 	Ambient Light	Ánh sáng môi trường
 	Light behind the object	Ánh sáng phía sau đối tượng
+# 3D light management.
+	Lights	Danh sách đèn
+	Add Light	Thêm đèn
+	Delete Light	Xóa đèn
+3d	Light	Đèn
 	Registration:	Điểm đăng ký:
 # Dimension tool and Object › Dimensions (dimension groups, their dialog and messages).
 	Dimension	Kích thước

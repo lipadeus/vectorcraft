@@ -840,6 +840,7 @@
 	CRLF (Windows)	CRLF (Windows)
 	Crop	Körülvágás
 	Crop Image	Kép körülvágása
+	Edit Path	Útvonal szerkesztése
 	Crop Marks	Vágójelek
 	Crop To	Körülvágás
 	Cross	Kereszt
@@ -1719,6 +1720,9 @@ file-filter	Templates	Sablonok
 	Hindi	Hindi
 	History	Előzmények
 	History Options…	Előzmények beállításai…
+	Step Backward	Lépés vissza
+	Step Forward	Lépés előre
+	Set History Limit…	Előzménykorlát beállítása…
 	History States	Előzmények lépésszáma
 # History panel: the names of undo steps (`every_undo_label_is_translated`).
 	Apply Data Set	Adatkészlet alkalmazása
@@ -4208,6 +4212,8 @@ mark-style	Japanese	Japán
 	Wrinkle Tool	Gyűrés
 	Write Layers	Rétegek írása
 	x Height	x-magasság
+	X11 (XWayland) When a Pen Is Attached	X11 (XWayland), ha toll csatlakozik
+	If a drawing tablet's pen doesn't draw, choose an X11 (XWayland) option.	Ha a grafikus tábla tolla nem rajzol, válassz egy X11 (XWayland) beállítást.
 	X11 (XWayland)	X11 (XWayland)
 	X:	X:
 	XML ID	XML-azonosító
@@ -5043,6 +5049,11 @@ imageTrace	Outline	Körvonal
 	Softness	Lágyság
 	Ambient Light	Környezeti fény
 	Light behind the object	Fény az objektum mögött
+# 3D light management.
+	Lights	Fények
+	Add Light	Fény hozzáadása
+	Delete Light	Fény törlése
+3d	Light	Fény
 	Registration:	Regisztráció:
 # Dimension tool and Object › Dimensions (dimension groups, their dialog and messages).
 	Dimension	Méret

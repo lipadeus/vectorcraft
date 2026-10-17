@@ -173,6 +173,7 @@
 	Expand…	Perluas…
 	Expand Appearance	Perluas tampilan
 	Crop Image	Pangkas gambar
+	Edit Path	Edit jalur
 	Mask	Masker
 	Rasterize…	Rasterisasi…
 	Create Gradient Mesh…	Buat mesh gradien…
@@ -1434,6 +1435,9 @@ lighting	Light	Cahaya
 	Use Text for Previews	Gunakan teks untuk pratinjau
 	{percent}% opacity	Opasitas {percent}%
 	History Options…	Opsi riwayat…
+	Step Backward	Mundur satu langkah
+	Step Forward	Maju satu langkah
+	Set History Limit…	Atur batas riwayat…
 	Open a document to see its history.	Buka dokumen untuk melihat riwayatnya.
 	Abutting	Bersinggungan
 	Black and White	Hitam dan putih
@@ -3373,6 +3377,8 @@ axis	Both	Keduanya
 	Star	Bintang
 	Power Saving (integrated)	Hemat daya (terintegrasi)
 	Target	Target
+	X11 (XWayland) When a Pen Is Attached	X11 (XWayland) saat pena terpasang
+	If a drawing tablet's pen doesn't draw, choose an X11 (XWayland) option.	Jika pena tablet gambar tidak menggambar, pilih opsi X11 (XWayland).
 	X11 (XWayland)	X11 (XWayland)
 	Print as Bitmap	Cetak sebagai bitmap
 	Draft	Draf
@@ -4755,6 +4761,11 @@ mark-style	Japanese	Jepang
 	Softness	Kelembutan
 	Ambient Light	Cahaya ambient
 	Light behind the object	Cahaya di belakang objek
+# 3D light management.
+	Lights	Lampu
+	Add Light	Tambah Lampu
+	Delete Light	Hapus Lampu
+3d	Light	Lampu
 	2up	2up
 	4up	4up
 	A6	A6

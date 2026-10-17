@@ -642,6 +642,7 @@
 	Created:	Creato:
 	Crop	Ritaglia
 	Crop Image	Ritaglia immagine
+	Edit Path	Modifica tracciato
 	Mask	Maschera
 	Crop Marks	Segni di ritaglio
 	Crop To	Ritaglia in base a
@@ -1355,6 +1356,9 @@ file-filter	Templates	Modelli
 	Highlight Substituted Glyphs	Evidenzia glifi sostituiti
 	History	Cronologia
 	History Options…	Opzioni cronologia…
+	Step Backward	Passo indietro
+	Step Forward	Passo avanti
+	Set History Limit…	Imposta limite cronologia…
 	History States	Stati cronologia
 # History panel: the names of undo steps (`every_undo_label_is_translated`).
 	Apply Data Set	Applica set di dati
@@ -4566,6 +4570,8 @@ lighting	Light	Luce
 @msg	missing panel layout	Disposizione dei pannelli mancante
 @msg	unsupported native docking operation	Operazione nativa di ancoraggio non supportata
 	Linux Display Server	Server di visualizzazione Linux
+	X11 (XWayland) When a Pen Is Attached	X11 (XWayland) quando è collegata una penna
+	If a drawing tablet's pen doesn't draw, choose an X11 (XWayland) option.	Se la penna di una tavoletta grafica non disegna, scegli un'opzione X11 (XWayland).
 	X11 (XWayland)	X11 (XWayland)
 	Ruler Origin	Origine dei righelli
 	Reset Ruler Origin	Ripristina origine dei righelli
@@ -4666,6 +4672,11 @@ lighting	Light	Luce
 	Softness	Morbidezza
 	Ambient Light	Luce ambientale
 	Light behind the object	Luce dietro l'oggetto
+# 3D light management.
+	Lights	Luci
+	Add Light	Aggiungi luce
+	Delete Light	Elimina luce
+3d	Light	Luce
 	Registration:	Registrazione:
 # Dimension tool and Object › Dimensions (dimension groups, their dialog and messages).
 	Dimension	Quota

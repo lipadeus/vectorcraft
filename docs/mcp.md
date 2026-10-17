@@ -1120,28 +1120,41 @@ already walks Image Trace. Short agent entry points:
   9-slice guides on or off; `nineSliceGuides` is `[left, top, right, bottom]`, fractions 0..1 of the symbol size; rows
   of `symbol.list` carry `nineSlice`: the guides or `null`),
   `symbol.place {name?, x?, y?}`, `symbol.breakLink {ids?}`, `symbol.replace`, `symbol.edit`, `symbol.duplicate`,
-  `symbol.selectInstances {name}`.
+  `symbol.selectInstances {name}`. `symbol.new` and `symbol.duplicate {name, newName?}` trim the white space around the
+  name they are given, as `symbol.options` trims `newName`; a blank one gives "New Symbol" or "<name> copy".
 - Brushes: `brush.list`, `brush.get {name}`, `brush.apply {name, ids?}`, `brush.new {type, name?, params?, ids?}`,
   `brush.setCurrent {name}`, `brush.options {name, params?}`, `brush.delete {name} | {names}`,
-  `brush.duplicate {name, newName?} | {names}`, `brush.freehand`, `object.expandBrush {ids?}`.
+  `brush.duplicate {name, newName?} | {names}`, `brush.freehand`, `object.expandBrush {ids?}`. `brush.new`,
+  `brush.duplicate` and `brush.options` trim the white space around the name they are given. A blank `name` gives
+  the type's default name ("New Calligraphic Brush" for a calligraphic brush), and a blank `newName` gives
+  "`<name>` copy" in `brush.duplicate` and keeps the name in `brush.options`.
 - Variables: `variable.list`, `variable.define {name, kind: text|visibility|image|graph}`, `variable.bind {variable, ids?}`,
   `variable.makeTextDynamic`, `variable.makeVisibilityDynamic`, `variable.makeImageDynamic`, `variable.makeGraphDynamic`,
   `variable.unbind`, `variable.rename`, `variable.delete`, `variable.highlight` (image values are file paths, graph
   values CSV as `graph.setData`). `variable.lock {locked?}` (Lock Variables) locks or unlocks the variables;
   without `locked` it toggles, and the lock is saved with the document. While the variables are locked,
   `variable.define`, `variable.delete`, `variable.rename` and the four `variable.make…Dynamic` commands fail with
-  "variables are locked"; `variable.bind`, `variable.unbind` and the `dataset.*` commands still run, and
-  `variable.list` reports `locked`.
+  "variables are locked"; `variable.bind`, `variable.unbind` and the `dataset.*` commands still run (except a
+  `dataset.import` whose header would define a variable, below), and `variable.list` reports `locked`.
 - Data sets: `dataset.list`, `dataset.new {name, values?}`, `dataset.set {name, values?}`, `dataset.rename`,
   `dataset.delete`, `dataset.capture`, `dataset.update`, `dataset.select {name}`, `dataset.next` /
   `dataset.prev` (each `dataset.select` / next / prev is one undo step over every bound object), `dataset.import {path|data|dataBase64|csv}` /
   `dataset.export {path?}` (CSV: `name`, then one column per variable). `dataset.import` also reads tab-separated
   files, and files whose first header cell isn't `name`: every header cell is then a variable, and the rows take the
   first free names `Data Set 1`, `Data Set 2` and so on. An import error about a row's values or name gives the file
-  line the row starts on.
+  line the row starts on. A header cell that names no variable defines one, unbound, in the same undo step as the
+  rows. `#Shown` defines a visibility variable `Shown`, `@Photo` defines an image variable `Photo`, and a cell without
+  a prefix defines a text variable. A prefixed cell whose name is already a variable of the prefix's kind names it;
+  one whose name is a variable of another kind fails the import. A `%` cell that isn't a variable's exact name (graph
+  data files) is refused. The reply's `defined` lists the variables the import defined. While the variables are
+  locked, an import whose header would define a variable fails with "variables are locked".
 - Batch: `action.batch {commands, source?: folder|datasets, folder?, destination?: none|saveAndClose|folder,
   destinationFolder?, overrideOpen?, overrideSave?, overrideExport?, includeSubdirs?, stopOnError?}` plays an
-  action on every file in a folder or every data set (the Actions panel menu's Batch…).
+  action on every file in a folder or every data set (the Actions panel menu's Batch…). Override Save and Override
+  Export end the file name of a step with `format` in that `format`, in lower case and without a leading dot, when it
+  is one of the format's extensions (`.svg` and `SVG` give `.svg`, `.JPEG` gives `.jpeg`), and otherwise in the
+  format's first extension (`png8` gives `.png`, `template` gives `.vctemplate`). A step without `format` keeps the
+  source file's extension (`.vectorcraft` over data sets).
 - Image Trace: `imageTrace.presets`, `imageTrace.make {id?, preset?, params?, view?}` (or `imageTrace.makeAndExpand`),
   `imageTrace.setView`, `imageTrace.expand`, `imageTrace.release`.
 - Live Paint: `livePaint.make`, `livePaint.merge`, `livePaint.fill {group?, point}`, `livePaint.strokeEdge`,
@@ -1239,7 +1252,7 @@ SVG/PDF exports bake the same faces the canvas draws. Only one Revolve is suppor
 
 Parameters: `angle` (degrees, 0..360, default 360), `offset` (points, 0..100000, default 0),
 `edge` (`"left"` or `"right"`), `rotationX/Y/Z` (degrees, defaults 0/0/0), `perspectiveAngle`
-(degrees, 0..160, default 0; an earlier `perspective`, 0..100%, is read as the angle that shows the same view), `segments` (8..128, default 64), `shade` (default true), `lightIntensity` (0..100%, default 80),
+(degrees, 0..160, default 0; an earlier `perspective`, 0..100%, is read as the angle that shows the same view), `segments` (8..128, default 64), `shade` (default true), `lightColor` (opaque `#rrggbb`, default `#ffffff`), `lightIntensity` (0..100%, default 80),
 `lightRotation` (degrees, -180..180, default 125.26; 0 on the object's right, counterclockwise), `lightHeight`
 (degrees, 0..90, default 30; 90 straight in front), `lightBehind` (default false), `lightSoftness` (0..100%,
 default 0), `ambient` (Ambient Light, 0..200%, default 25; an earlier `lightAzimuth` and `lightElevation` are read
@@ -1248,6 +1261,13 @@ as the same light), `cap` (boolean, default true), and `expandVisibleOnly` (bool
 vector path. Body faces share that curved rim. Partial sweeps use sectors and leave their angular
 cut sides open. Closed or coincident-end profiles are unchanged.
 Missing `cap` enables caps; set it to false for open endpoints. Shaded Revolve surfaces automatically interpolate curved-surface lighting with vector gradients while preserving profile corners and flat caps. There is no separate smoothing parameter. `shade: false` disables all lighting. Visibility of intersecting surfaces is approximate.
+`lights` is null by default, retaining the earlier single-light controls. Set an array of one to ten objects to replace that light: `{color: "#rrggbb", intensity: 0..100, rotation: -180..180, height: 0..90, softness: 0..100, behind: bool}`. Defaults per light are white, 80%, 125.26 degrees, 30 degrees, 0%, false. Omitted fields use defaults; unknown nested keys and malformed lists are refused before mutation. `ambient` is shared and counted once. Set `lights: null` to restore the earlier controls. The list is saved in the native file and survives preview, undo and expansion.
+
+```json
+{"name":"run_command","arguments":{"command":"effect.setParams","params":{"index":0,"item":null,"params":{"lights":[{"color":"#ff8040","rotation":135,"height":35,"intensity":70},{"color":"#4080ff","rotation":-45,"height":20,"intensity":40}],"ambient":20}}}}
+```
+
+`lightColor` changes only the earlier directional light; ambient stays neutral. Invalid command colors are refused before editing, and invalid loaded colors fall back to white. Colored smooth faces use ordinary RGB vector gradients; source gradients keep their placement and opacity with vector blending/masks. Pattern tiles retain neutral shading.
 The dialog's Lighting tab manipulates the same `lightRotation` and `lightHeight` parameters;
 its guide visibility and tab choice are UI state, excluded from saved effect parameters.
 `expandVisibleOnly` is saved with the effect. It trims covered portions of opaque solid surfaces only
@@ -1258,7 +1278,7 @@ See [Revolve](revolve.md) for the scope and limitations.
 
 ```json
 {"name":"run_command","arguments":{"command":"effect.apply","params":{"effect":"threeD.revolve","item":null,"params":{"angle":360,"offset":20,"edge":"left","rotationX":0,"rotationY":0,"rotationZ":0}}}}
-{"name":"run_command","arguments":{"command":"effect.setParams","params":{"index":0,"item":null,"params":{"angle":180,"lightRotation":30,"cap":true}}}}
+{"name":"run_command","arguments":{"command":"effect.setParams","params":{"index":0,"item":null,"params":{"angle":180,"lightRotation":30,"lightColor":"#ff8040","cap":true}}}}
 {"name":"run_command","arguments":{"command":"effect.setParams","params":{"index":0,"item":null,"params":{"expandVisibleOnly":true}}}}
 {"name":"run_command","arguments":{"command":"effect.expandAppearance","params":{}}}
 ```
@@ -1430,7 +1450,8 @@ under `ui.library_panels`.
 ## Libraries
 
 The Libraries panel's libraries hold graphics, colours and character and paragraph styles that any document can use.
-They are kept on this machine: each is a `.vclibrary` file (JSON) in the `Libraries` folder next to the preferences
+They are kept on this machine: each is a `.vclibrary` file (JSON) named after the library (`CON-.vclibrary` for a
+library named after a Windows device such as `CON`) in the `Libraries` folder next to the preferences
 (none in the web app and headless sessions, where they last for the session). `library.list` lists them (`id`, `name`,
 the count of each kind, `current`, `folder`); `library.get {library?}` returns one's items (graphics with `id`, `name`,
 size and a PNG `thumbnail` in base64; colours with `name`, `hex` and `color`; styles with `name` and `attrs`).
@@ -1444,8 +1465,9 @@ first selected object's solid colour, else the default one, or `color`), `charSt
 text's attributes). An item the library already has is reported as `existing`. `library.use {library?, kind, item,
 center?, to?}` uses one: a graphic is placed centred on `center` (pasted with its resources; a swatch name the document
 gives another colour merges into the document's), a colour paints the selection's fill or stroke, and a style is added
-to the document (numbered when its name is taken by other attributes) and applied to the selected text, each as one
-undo step. `library.removeItem {library?, kind, item}` removes one.
+to the document under its name without the white space around it (numbered when that name is taken by other
+attributes) and applied to the selected text, each as one undo step. `library.removeItem {library?, kind, item}` removes
+one.
 
 Items can be put in user-named groups, which the panel shows as collapsible sections after the ungrouped items (its
 search field filters every item by name; `library.get` lists them all to filter). `library.createGroup {library?,
@@ -1530,6 +1552,11 @@ couldn't be decoded and is missing from the picture", the note raster exports gi
 In pattern editing mode the tile edge (`pattern.options {showTileEdge}`) and the swatch bounds (`pattern.options
 {showSwatchBounds}`: the part of the tiling the swatch repeats, dashed) are drawn in the preference
 `patternTileEdgeColor`.
+
+`object.pattern.make {name?}`, `object.pattern.saveCopy {name?}` and `pattern.options {newName?}` trim the white space
+around the name they are given. The first two number a name that a pattern or swatch has ("Dots 2"), and
+`pattern.options` refuses a name that another pattern has. A blank name gives "New Pattern N" in
+`object.pattern.make` and "`<pattern>` copy" in `object.pattern.saveCopy`, and `pattern.options` keeps the name.
 
 ```json
 {"name":"run_command","arguments":{"command":"pattern.options","params":{"showSwatchBounds":true}}}
@@ -2076,8 +2103,8 @@ Actions panel plays an action as a `command.batch`. The Actions panel menu's Bat
 `action.batch`: the same steps on every readable file in a folder (or every data set of the open document), with
 destination `none` | `saveAndClose` | `folder` and Override Open / Save / Export. Over data sets, the folder
 destination and the overrides name each file after the document and the data set (`<document>_<data set>.<ext>`).
-Batch writes `/`, `\` and `:` in the data set's name as `-`, and adds `-2`, `-3`… to a name an earlier data set
-used (compared without case). Caps: 500 files or data sets, 8
+Batch writes `/`, `\`, `:`, `<`, `>`, `"`, `|`, `?`, `*` and control characters in the data set's name as `-`, and
+adds `-2`, `-3`… to a name an earlier data set used (compared without case). Caps: 500 files or data sets, 8
 folder levels, 256 steps. An action recorded in the Actions panel leaves the artboard out,
 and its steps of these commands get the artboard that is active when the action plays. A press with the Selection,
 Direct Selection or Group Selection tool inside an artboard makes that artboard the active one; with the Selection
@@ -2676,6 +2703,15 @@ subscript, baseline shift and color, and each paragraph's alignment, indents, sp
 Table cells are separated by tabs and each row is a paragraph; hidden text, pictures, headers, footers and notes are
 left out. `file.place` answers `format: "rtf"`.
 
+A Word document (a ZIP package named `.docx`, or one that holds `word/document.xml`, except a `.txt` file) is placed
+the same way and keeps the same formatting, taken from the document defaults, the paragraph style and the character
+style (and the styles each is based on) and direct formatting; theme fonts are read from the theme part. Table cells
+are separated by tabs and each row is a paragraph. Hidden and deleted text, field instructions, pictures, text boxes,
+headers, footers, notes and list numbers are left out. A package with more than 10,000 files, a part that unpacks to
+more than 16 MiB or nests elements more than 256 deep, and a document with more than 4 MiB of text or 100,000
+paragraphs or runs are refused.
+`file.place` answers `format: "docx"`.
+
 ## PDF presets
 
 `pdf.preset.list` lists the built-in presets (`VectorCraft Default`, which preserves editing, then High Quality Print,
@@ -2704,7 +2740,9 @@ preferences: `text/plain` (the text of a type-only copy, else the SVG markup wit
 area). Each one has a query command:
 `clipboard.exportSvg`, `clipboard.exportText` (null unless every copied object is type), `clipboard.exportPdf`
 (a one-page PDF, the page the objects' visual bounds) and `clipboard.exportPng {scale?}` (cropped to the objects,
-transparent around them).
+transparent around them). As in `document.export`, the PDF's and the PNG's replies list their notes in `warnings`
+(type written in the fallback font…; the PNG's also say when an image couldn't be decoded). After Copy or Cut the app
+shows the first note of the PDF and PNG it offers in the status bar.
 
 What other apps copied goes into the clipboard with `clipboard.importSvg`, `clipboard.importPdf {dataBase64, page?,
 password?}` (the page's objects), `clipboard.importEps {dataBase64}` (an EPS or other PostScript picture's objects,
@@ -2878,7 +2916,13 @@ otherwise. `fullDocument` writes one file per row instead (a PDF of every artboa
 art), `includeBleed` grows each artboard by the document's bleed, `subfolders` puts each row's files in a sub-folder
 (its size or format, or its own `folder`), `preset: "mobile"` or `"density"` (Android-style ldpi…xxxhdpi
 sub-folders) replaces the rows, and `settings: {png: {…}, jpg: {…}, svg: {…}, pdf: {preset}}` gives every row of a
-format its options. The document remembers the last params: `document.exportSettings`.
+format its options. On every platform, `/`, `\`, `:`, `<`, `>`, `"`, `|`, `?`, `*` and control characters from a
+prefix, a suffix, a name pattern or an item's name become `-` in file and folder names, a folder name ends without
+periods or spaces, and a Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM1` to `COM9`, `LPT1` to `LPT9`) that
+is the whole name or comes before its first period gets a `-` after it (`CON-.png`). The document remembers the last
+params: `document.exportSettings`. As in `document.export`,
+the reply's `warnings` lists the notes of every file exported (an image that couldn't be decoded, type written in the
+fallback font…), each note once; the export still writes or returns every file.
 
 Batch exports (#1935):
 - **What:** `layers: [id…]` (each layer's art alone) or `selection: "one" | "each"` instead of artboards
@@ -3087,16 +3131,20 @@ File → Export → Save for Web (Legacy) writes optimised web images: `document
 `dither`, `ditherAmount`, `transparency`, `matte`, `interlaced`, `webSnap`, `lossy` (GIF) and `colorTable {locked,
 transparent, webShift, sort}`; for JPEG `quality`, `progressive`, `optimized`, `embedProfile` and `matte`; for PNG-24
 `transparency`, `matte` and `interlaced`. `metadata` (none, copyright, contact, all) writes File Info as PNG text or a
-GIF/JPEG comment; `convertToSrgb` marks PNGs as sRGB. With slices (`slice.list`) each image slice becomes
-`images/<slice name>.<ext>` (`slices: selected` writes the selected ones, `none` one image); `output: html` adds
+GIF/JPEG comment; `convertToSrgb` marks PNGs as sRGB. `<stem>` is the name of `path` without its extension, or
+without `path` the document's title with the characters Windows does not allow in a file name as `-` and a `-` after
+a Windows device name. With slices (`slice.list`) each image slice becomes `images/<slice name>.<ext>`, with a `-`
+after a Windows device name such as `aux` (`slices: selected` writes the selected ones, `none` one image);
+`output: html` adds
 `<stem>.html` placing them, with each slice's URL, target, alt text and status message, and No Image / HTML Text cells.
-Without `path` the files come back as `{name, dataBase64}`.
+Without `path` the files come back as `{name, dataBase64}`. As in the raster exports, `warnings` says when an image
+couldn't be decoded and is missing from the image; the files are written all the same.
 
 `document.exportForWeb.preview` returns what Save writes for the same settings without writing it: `bytes` (the exact
 file size), `seconds` to download at `kbps` (default 56.6), the size, and for palette formats the colour table
 (`colors: [{color, source, transparent, locked, webShifted, webSafe}]`). The colour table's lists name colours by
 `source` (the colour the reduction made), so a colour keeps its edits when it is web-shifted or snapped. `slice: n`
-previews one slice; `image: true` adds the file.
+previews one slice; `image: true` adds the file; `warnings` holds the export's warnings.
 
 Presets: `webExport.presets.list` (built-in ones, then saved ones), `webExport.presets.save {name, newName?, …settings}`,
 `webExport.presets.delete {name}`; any name works as `preset` in the other commands (its settings, then the keys
@@ -3148,8 +3196,10 @@ says when CSS can't describe the art exactly (`unsupported`: other shapes, image
 written as its box, or with `rasterize: true` as `background-image: url(<class>.png)`. `units` is `px` (1 px per
 point, as in SVG export), `pt`, `mm`, `cm` or `in`; `unnamed: false` leaves out unnamed objects (counted in
 `skipped`). `css.generate` does the same for the whole document, and `css.export {path?, scope?: selection|all}`
-writes the `.css` file with the PNGs of rasterized art next to it (no path: `data` and `images` as base64). In the app,
-`css.copy` copies the CSS and `css.exportFile` writes it through a save panel (the web downloads it).
+writes the `.css` file with the PNGs of rasterized art next to it (no path: `data` and `images` as base64). Its
+`warnings` add the PNGs' notes to the CSS's, each once (an image that couldn't be decoded, type written in the
+fallback font…). In the app, `css.copy` copies the CSS and `css.exportFile` writes it through a save panel (the web
+downloads it) and shows the first note in the status bar.
 
 ```json
 {"name":"run_command","arguments":{"command":"css.selection","params":{"units":"px","position":true}}}
@@ -3516,7 +3566,10 @@ undo step.
 `type.opticalMarginAlignment {on?: bool}` (Type › Optical Margin Alignment) turns Optical Margin Alignment on or off
 for the selected type objects (or `ids`); without `on` it sets the opposite of the first object's setting. It replies
 `{on, ids}`, and the menu item is checked while the first type object it acts on (inside a selected group too) has it
-on. In every left-to-right paragraph of point and area type, these characters hang outside the margin when they
+on. Optical Margin Alignment is a setting of the whole thread: the command sets every frame of a selected frame's
+thread, and `ids` lists them all. Threading frames gives the thread its first frame's setting, frames taken out of
+a thread keep it, and a file whose frames of one thread differ opens with the first frame's setting in all of them.
+In every left-to-right paragraph of point and area type, these characters hang outside the margin when they
 start or end a line: quotation marks, hyphens (a hyphenated line's hyphen too), full stops and commas hang wholly;
 asterisks, tildes, ellipses, en and em dashes, colons and semicolons hang by half their width; and A, V, W, Y, v, w
 and y hang by a tenth of theirs. A punctuation mark followed by a quotation mark hangs with it.
@@ -3531,6 +3584,22 @@ New type and documents from before it have it off, and it is saved only when on.
 {"name":"run_command","arguments":{"command":"type.opticalMarginAlignment","params":{"on":true}}}
 ```
 
+## Roman Hanging Punctuation
+
+`text.setFormat {romanHangingPunctuation: bool}` (Paragraph panel menu › Roman Hanging Punctuation) turns it on or off
+for the paragraphs of the selected type (or `ids`, or the paragraphs a `start` / `end` range touches). In those
+paragraphs the punctuation Optical Margin Alignment hangs hangs outside the margin by the same amounts (quotation marks,
+hyphens, full stops and commas wholly; asterisks, tildes, ellipses, en and em dashes, colons and semicolons by half),
+on the same sides (left-aligned lines at their left, right-aligned at their right, centered and justified at both), and
+letters don't hang. With Optical Margin Alignment on as well, the letters hang too. East Asian punctuation hangs only
+through burasagari; type on a path and right-to-left paragraphs are laid out as before. Off by default, saved with the
+paragraph (`roman_hanging` in `para`) only when on, carried by paragraph styles, and turned off by Reset Panel. One undo
+step. The menu item is checked while the paragraph the Paragraph panel shows has it on.
+
+```json
+{"name":"run_command","arguments":{"command":"text.setFormat","params":{"romanHangingPunctuation":true}}}
+```
+
 ## Small Caps, Superscript and Subscript
 `text.setFormat {smallCaps, position}` (the selected type, or `ids`) and `text.setRangeStyle {id, start, end, smallCaps,
 position}` (a range) set what the Character panel's Small Caps, Superscript and Subscript buttons and menu items set.
@@ -3538,6 +3607,8 @@ position}` (a range) set what the Character panel's Small Caps, Superscript and 
 default); capitals keep their size, and with All Caps on every letter is a full-size capital. `position: "superscript"`
 or `"subscript"` draws the characters at Document Setup's superscript or subscript size, raised or lowered by its
 position (by default 58.3% of the font size, moved by 33.3% of it), and `"normal"` puts them back on the baseline.
+A file whose characters, character styles or graph label styles hold a superscript or subscript size outside 1 to
+500%, a position outside -500 to 500% or a small caps size outside 1 to 200% opens with the nearer end of each range.
 Setting superscript on subscript characters replaces the subscript, and setting subscript on superscript characters
 replaces the superscript. When `document.setup {superscript, subscript, smallCapsSize}` changes the proportions, the
 characters take the new ones. One undo step.
@@ -3682,7 +3753,11 @@ the story re-flows (a paragraph split between frames has them in both).
 In the native file a text object's `para` holds the first paragraph's attributes and `paras` (left out when every
 paragraph is alike) one entry per paragraph, so older readers keep the first paragraph's. SVG export anchors each
 centred or right-aligned line on its own (`<tspan text-anchor>`), and SVG import gives each line's paragraph its
-alignment back, with indents that keep it in place.
+alignment back, with indents that keep it in place. When a native file's type or character styles hold a size, a
+horizontal scale or a vertical scale of 0 or less, the value opens as 12 pt or 100%. A negative leading opens as Auto,
+and a size, leading or scale past 4,000,000 opens as 4,000,000. A baseline shift, an indent or a space before or after
+past 4,000,000 pt either way, in the type or in character or paragraph styles, opens at that limit, and a tab stop
+outside 0 to 100,000 pt opens at the nearer end.
 
 ```json
 {"name":"run_command","arguments":{"command":"text.setStyle","params":{"id":42,"justify":"center","start":0,"end":0}}}
@@ -3842,12 +3917,16 @@ desktop app. The Flare tool's are its Flare Tool Options (dialog `flareOptions`)
 `direction` (°), and `raysOn` and `ringsOn` (the Rays and Rings checkboxes; off, the flare has none). OK keeps them
 (`tool.setOption {tool: "flare", values}`) and the next flare dragged out uses them; a click with the tool opens the
 same dialog, and its OK also draws a flare there. The Artboard tool's are the active artboard's Artboard Options
-(dialog `artboardOptions`; the Artboard tool's active artboard while it is in use, else the window's), a graph tool's
+(dialog `artboardOptions`; the Artboard tool's active artboard while it is in use, else the window's; its `x` and `y`
+are the artboard's top-left corner in document points, while the dialog shows X and Y at the reference point the
+Transform panel uses, counted from the ruler origin), a graph tool's
 the selected graph's Graph Type (an error without one), a Symbolism tool's the Symbolism Tools Options (dialog
 `symbolismOptions`: `diameter` in points, `intensity` and `density` 1–10, one brush for the eight tools) and the
 Magic Wand tool's its panel. `ui.newArtboard` (Alt-click on the Artboards panel's New Artboard) opens Artboard Options
 for a new artboard, with `new: true` and the name, position and size that `artboard.new {}` would give it. OK runs
 `artboard.new` with the fields and makes the new artboard the active one, and Cancel adds no artboard.
+`artboard.new` and `artboard.setProps` trim the white space around `name`, and a blank name gives the artboard its
+default name, "Artboard N" for the Nth artboard.
 
 ```json
 {"name":"run_command","arguments":{"command":"tool.setOption","params":{"tool":"flare","values":{"rays":24,"ringsOn":false}}}}
@@ -4039,7 +4118,7 @@ among the objects takes the others in as more key objects, keeping its options, 
 A blend's spine is the straight lines between its key centres until it is edited. `object.blend.info` lists it
 (`spine.anchors`, `keyAnchors`: the point each key sits on). `object.blend.spine.addAnchor {x, y}` adds a point where
 the spine passes nearest, `object.blend.spine.moveAnchor {anchor, x, y}` moves a point (a key on it moves along; with
-`handle: "in" | "out"` it places that handle), `object.blend.spine.reshapeSegment {segment, t, dx, dy, perpendicular?}` bends a segment
+`handle: "in" | "out"` it places that handle), `object.blend.spine.convertAnchor {anchor, to: "smooth" | "corner", x?, y?}` converts a point's handles (a Smooth drag with `x, y` creates opposite handles; Corner retracts both), `object.blend.spine.reshapeSegment {segment, t, dx, dy, perpendicular?}` bends a segment
 so its point at `t` moves by (dx, dy), turning a straight spine into a curve (`perpendicular` works as in `path.reshapeSegment`), and `object.blend.spine.removeAnchor
 {anchor}` deletes a point no key sits on; the first edit turns the spine into a path. Moving a key moves its end of the spine. Release
 (`object.blend.release`) leaves the spine as a path that paints nothing (`spines` in the result):

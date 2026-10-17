@@ -824,7 +824,7 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         "css.exportFile",
         "Export CSS…",
         "",
-        "{path?, scope?: selection|all (default selection), …css.selection options} css.export written to path, else a picked file (the web downloads it), with the pictures of rasterized art next to it (CSS Properties panel: Export Selected CSS…, Export All…) → {path, rules, images: [path…]}",
+        "{path?, scope?: selection|all (default selection), …css.selection options} css.export written to path, else a picked file (the web downloads it), with the pictures of rasterized art next to it (CSS Properties panel: Export Selected CSS…, Export All…) → {path, rules, images: [path…], warnings (css.export's; the status bar shows the first)}",
     ),
     (
         "file.print",
@@ -1906,9 +1906,11 @@ pub fn display_label(app: &VectorcraftApp, id: &str, label: &str) -> String {
     match id {
         "edit.undo" | "edit.redo" => {
             let last = app.session.active().and_then(|d| if id == "edit.undo" { d.history.undo.last() } else { d.history.redo.last() });
+            // The step's name as the History panel lists it.
+            let name = crate::panels::history::shown;
             match last {
-                Some(h) if id == "edit.undo" => fmt(tl!("Undo {name}"), &[("name", tl!(&h.label))]),
-                Some(h) => fmt(tl!("Redo {name}"), &[("name", tl!(&h.label))]),
+                Some(h) if id == "edit.undo" => fmt(tl!("Undo {name}"), &[("name", &name(&h.label))]),
+                Some(h) => fmt(tl!("Redo {name}"), &[("name", &name(&h.label))]),
                 None => tl!(if id == "edit.undo" { "Undo" } else { "Redo" }).to_string(),
             }
         }
@@ -3360,11 +3362,13 @@ fn field_event(app: &mut VectorcraftApp, id: &str) -> Option<egui::Event> {
 
 /// Invoke an item clicked in the system menu bar (macOS; its key equivalents come back to egui as
 /// key presses, see [`crate::native_menu`]). While a text field has the keyboard, Select All, Cut,
-/// Copy and Paste act on the field's text, as their keys do; everything else (and those commands
-/// with no field focused) goes to [`invoke`].
+/// Copy and Paste act on the field's text, as their keys do. While its keys select every artboard
+/// ([`crate::panels::artboards::selects_all`]), Select All does too. Everything else (and those
+/// commands with no field focused) goes to [`invoke`].
 pub fn invoke_from_system_menu(app: &mut VectorcraftApp, ctx: &egui::Context, id: &str, p: Value) {
     match focused_text_field(ctx).and_then(|f| Some((f, field_event(app, id)?))) {
         Some((field, e)) => to_field(ctx, field, e),
+        None if id == "select.all" && crate::panels::artboards::selects_all(app, ctx) => crate::panels::artboards::select_all(app),
         None => invoke(app, id, p),
     }
 }
@@ -4173,6 +4177,31 @@ mod tests {
             app.run(id, json!({})).unwrap();
             assert_eq!(dynamic_label(&app, id, ""), off);
         }
+    }
+
+    /// Edit › Undo and Edit › Redo name the step in the UI language as the History panel lists it
+    /// (`panels::history::step_name`), including a step named after an effect whose catalog holds
+    /// only the effect's menu row with an ellipsis, as Japanese does for Feather.
+    #[test]
+    fn undo_and_redo_name_the_step_as_the_history_panel_does() {
+        let ja = crate::i18n::Lang::from_code("ja").expect("ja registered");
+        crate::i18n::set_current(ja);
+        let mut app = app_with_a_rectangle();
+        app.run("effect.apply", json!({"effect": "stylize.feather"})).unwrap();
+        assert_eq!(app.session.active().unwrap().history.undo.last().map(|h| h.label.as_str()), Some("Feather"));
+        let shown = |app: &VectorcraftApp, id: &'static str| {
+            let item = c(if id == "edit.undo" { "Undo" } else { "Redo" }, id);
+            match entry(app, &item) {
+                Some(Entry::Item(row)) => row.label.to_string(),
+                _ => panic!("{id} is not a menu item"),
+            }
+        };
+        assert_eq!(shown(&app, "edit.undo"), "ぼかしを取り消す");
+        app.run("edit.undo", json!({})).unwrap();
+        assert_eq!(shown(&app, "edit.redo"), "ぼかしをやり直す");
+        assert_eq!(shown(&app, "edit.undo"), "長方形を取り消す", "a step with a plain row");
+        crate::i18n::set_current(crate::i18n::Lang::EN);
+        assert_eq!(shown(&app, "edit.redo"), "Redo Feather");
     }
 
     /// Type › Optical Margin Alignment runs `type.opticalMarginAlignment`, needs a selection, and

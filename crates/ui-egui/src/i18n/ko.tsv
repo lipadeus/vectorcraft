@@ -184,6 +184,7 @@
 	Expand…	확장…
 	Expand Appearance	모양새 확장
 	Crop Image	이미지 자르기
+	Edit Path	패스 편집
 	Mask	마스크
 	Rasterize…	래스터화…
 	Create Gradient Mesh…	그레이디언트 메시 만들기…
@@ -1595,6 +1596,9 @@
 	Highlight Substituted Glyphs	대체된 글리프 강조 표시
 	Highlight anchors on mouse over	마우스를 올리면 앵커 강조 표시
 	History Options…	히스토리 옵션…
+	Step Backward	한 단계 뒤로
+	Step Forward	한 단계 앞으로
+	Set History Limit…	히스토리 한도 설정…
 	History States	히스토리 상태
 # History panel: the names of undo steps (`every_undo_label_is_translated`).
 	Apply Data Set	데이터 세트 적용
@@ -4532,6 +4536,8 @@ lighting	Light	광원
 @msg	missing panel layout	패널 레이아웃이 없습니다
 @msg	unsupported native docking operation	지원되지 않는 기본 도킹 작업
 	Linux Display Server	Linux 디스플레이 서버
+	X11 (XWayland) When a Pen Is Attached	펜 연결 시 X11 (XWayland)
+	If a drawing tablet's pen doesn't draw, choose an X11 (XWayland) option.	드로잉 태블릿의 펜으로 그려지지 않으면 X11 (XWayland) 옵션을 선택하세요.
 	X11 (XWayland)	X11 (XWayland)
 	Artistic	예술 효과
 	Film Grain…	필름 그레인…
@@ -4630,6 +4636,11 @@ lighting	Light	광원
 	Softness	부드러움
 	Ambient Light	주변광
 	Light behind the object	개체 뒤의 조명
+# 3D light management.
+	Lights	광원 목록
+	Add Light	광원 추가
+	Delete Light	광원 삭제
+3d	Light	광원
 	Registration:	기준점:
 # Dimension tool and Object › Dimensions (dimension groups, their dialog and messages).
 	Dimension	치수

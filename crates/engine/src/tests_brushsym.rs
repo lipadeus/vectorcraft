@@ -140,6 +140,32 @@ fn brush_options_rename_duplicate_and_delete_update_strokes() {
     assert!(s.execute("brush.delete", &json!({"name": "5 pt. Round"})).is_err());
 }
 
+/// New Brush, Duplicate Brush and Brush Options trim the name they are given, as the Brush Options
+/// dialog does; the trimmed name is the one compared with the brushes there are, and a blank name
+/// gives the name the command gives when there is none.
+#[test]
+fn new_duplicate_and_renamed_brushes_trim_their_names() {
+    let mut s = session();
+    let new = |s: &mut Session, name: &str| s.execute("brush.new", &json!({"type": "calligraphic", "name": name})).unwrap()["name"].clone();
+    assert_eq!(new(&mut s, "  Nib \t"), "Nib");
+    assert_eq!(new(&mut s, " Nib"), "Nib 2");
+    assert_eq!(new(&mut s, " \t "), "New Calligraphic Brush");
+    assert_eq!(s.execute("brush.duplicate", &json!({"name": "Nib", "newName": " Quill\t"})).unwrap()["name"], "Quill");
+    assert_eq!(s.execute("brush.duplicate", &json!({"name": "Nib", "newName": "  "})).unwrap()["name"], "Nib copy");
+    assert_eq!(s.execute("brush.options", &json!({"name": "Nib 2", "newName": " Pen "})).unwrap()["name"], "Pen");
+    assert_eq!(s.execute("brush.options", &json!({"name": "Pen", "newName": " "})).unwrap()["name"], "Pen");
+    let e = s.execute("brush.options", &json!({"name": "Pen", "newName": " Quill"})).unwrap_err().to_string();
+    assert!(e.contains("a brush named `Quill` exists"), "{e}");
+    // Duplicate Brush names the copy of a brush whose saved name has white space around it, as a
+    // saved file can hold, from the trimmed name (" Old " gives "Old copy").
+    let mut lib = vectorcraft_brush::library(&s.doc().unwrap().doc);
+    lib.iter_mut().filter(|b| b.name == "Pen").for_each(|b| b.name = " Old ".into());
+    vectorcraft_brush::store(std::sync::Arc::make_mut(&mut s.doc_mut().unwrap().doc), &lib);
+    assert_eq!(s.execute("brush.duplicate", &json!({"name": " Old "})).unwrap()["name"], "Old copy");
+    let names: Vec<String> = vectorcraft_brush::library(&s.doc().unwrap().doc).into_iter().map(|b| b.name).collect();
+    assert_eq!(names[names.len() - 6..], ["Nib", " Old ", "New Calligraphic Brush", "Quill", "Nib copy", "Old copy"]);
+}
+
 /// The Brushes panel's multi-selection: `names` deletes or duplicates several brushes in one undo
 /// step, and an unknown name changes nothing.
 #[test]
@@ -539,6 +565,23 @@ fn delete_duplicate_and_replace_symbols() {
     doc.walk(|n| plain += matches!(n.kind, NodeKind::Path { .. }) as i32);
     assert_eq!(plain, 2, "both instances of Small were expanded");
     assert!(s.execute("symbol.delete", &json!({"name": "Small"})).is_err());
+}
+
+/// New Symbol and Duplicate Symbol trim the name they are given, as Symbol Options trims
+/// `newName`; the trimmed name is the one compared with the symbols there are.
+#[test]
+fn new_and_duplicate_symbols_trim_their_names_as_a_rename_does() {
+    let mut s = session();
+    rect(&mut s, 0.0, 0.0, 10.0, 10.0);
+    assert_eq!(s.execute("symbol.new", &json!({"name": "  Box \t"})).unwrap()["name"], "Box");
+    rect(&mut s, 20.0, 0.0, 10.0, 10.0);
+    assert_eq!(s.execute("symbol.new", &json!({"name": " Box"})).unwrap()["name"], "Box 2");
+    rect(&mut s, 40.0, 0.0, 10.0, 10.0);
+    assert_eq!(s.execute("symbol.new", &json!({"name": "   "})).unwrap()["name"], "New Symbol");
+    assert_eq!(s.execute("symbol.duplicate", &json!({"name": "Box", "newName": " Logo\t"})).unwrap()["name"], "Logo");
+    assert_eq!(s.execute("symbol.duplicate", &json!({"name": "Box", "newName": " "})).unwrap()["name"], "Box copy");
+    let names: Vec<String> = s.doc().unwrap().doc.symbols.iter().map(|x| x.name.clone()).collect();
+    assert_eq!(names, ["Box", "Box 2", "New Symbol", "Logo", "Box copy"]);
 }
 
 #[test]

@@ -596,6 +596,7 @@
 	Created:	创建时间：
 	Crop	裁剪
 	Crop Image	裁剪图像
+	Edit Path	编辑路径
 	Mask	蒙版
 	Crop Marks	裁切标记
 	Crop To	裁剪到
@@ -1297,6 +1298,9 @@ file-filter	Templates	模板
 	Highlight Substituted Glyphs	突出显示替代字形
 	History	历史记录
 	History Options…	历史记录选项…
+	Step Backward	后退一步
+	Step Forward	前进一步
+	Set History Limit…	设置历史记录上限…
 	History States	历史记录步数
 # History panel: the names of undo steps (`every_undo_label_is_translated`).
 	Apply Data Set	应用数据集
@@ -4828,6 +4832,8 @@ lighting	Light	光源
 	Horizontal Guide	水平参考线
 	Move Guide to Layer	将参考线移至图层
 	Linux Display Server	Linux 显示服务器
+	X11 (XWayland) When a Pen Is Attached	连接手写笔时使用 X11 (XWayland)
+	If a drawing tablet's pen doesn't draw, choose an X11 (XWayland) option.	如果数位板的笔无法绘画，请选择一个 X11 (XWayland) 选项。
 	X11 (XWayland)	X11 (XWayland)
 	Ruler Origin	标尺原点
 	Reset Ruler Origin	重置标尺原点
@@ -4919,6 +4925,11 @@ lighting	Light	光源
 	Softness	柔和度
 	Ambient Light	环境光
 	Light behind the object	光源位于对象后方
+# 3D light management.
+	Lights	光源列表
+	Add Light	添加光源
+	Delete Light	删除光源
+3d	Light	光源
 	Registration:	对齐点:
 # Dimension tool (linked dimension annotations)
 	Create Dimension	创建尺寸标注

@@ -575,6 +575,7 @@
 	Created:	Criado:
 	Crop	Recortar
 	Crop Image	Recortar Imagem
+	Edit Path	Editar caminho
 	Mask	Máscara
 	Crop Marks	Marcas de Corte
 	Crop To	Recortar Para
@@ -1160,6 +1161,9 @@
 	Highlight anchors on mouse over	Realçar pontos de ancoragem ao passar o mouse
 	History	Histórico
 	History Options…	Opções do Histórico…
+	Step Backward	Voltar um Passo
+	Step Forward	Avançar um Passo
+	Set History Limit…	Definir Limite do Histórico…
 	History States	Estados do Histórico
 # History panel: the names of undo steps (`every_undo_label_is_translated`).
 	Apply Data Set	Aplicar Conjunto de Dados
@@ -3979,6 +3983,11 @@ axis	Both	Ambos
 	Softness	Suavidade
 	Ambient Light	Luz ambiente
 	Light behind the object	Luz atrás do objeto
+# 3D light management.
+	Lights	Luzes
+	Add Light	Adicionar luz
+	Delete Light	Excluir luz
+3d	Light	Luz
 
 # Completeness follow-up (#1914): remaining UI strings and messages.
 	Glowing Edges	Bordas Brilhantes
@@ -4551,6 +4560,8 @@ axis	Both	Ambos
 	Right Diagonal	Diagonal Direita
 	Left Diagonal	Diagonal Esquerda
 	Linux Display Server	Servidor de Exibição do Linux
+	X11 (XWayland) When a Pen Is Attached	X11 (XWayland) Quando Houver uma Caneta Conectada
+	If a drawing tablet's pen doesn't draw, choose an X11 (XWayland) option.	Se a caneta de uma mesa digitalizadora não desenhar, escolha uma opção X11 (XWayland).
 	X11 (XWayland)	X11 (XWayland)
 @id	pathfinder.add	Unir
 	3 x 3 Average	Média 3 x 3
